@@ -12,3 +12,6 @@ source venv_demand/bin/activate #Activate
 ```bash
 pip install -r requirements.txt
 ```
+
+# Data source
+Favorita stores located in Ecuador - https://www.kaggle.com/competitions/store-sales-time-series-forecasting/data

@@ -1,3 +1,6 @@
 # Virtual environment
 venv_demand/
 
+# Data files
+.DS_Store
+data_preparation/data/
