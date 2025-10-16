@@ -3,4 +3,7 @@ venv_demand/
 
 # Data files
 .DS_Store
-data_preparation/data/
+data/source_files/
+
+# Weights & Biases files
+data/processing_scripts/wandb/
