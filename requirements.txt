@@ -3,4 +3,5 @@ pandas
 wandb
 nbformat
 scikit-learn
-
+darts
+plotly
