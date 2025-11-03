@@ -2,8 +2,8 @@ import os
 import pandas as pd
 
 
-RAW = "data/source_files"
-OUT_DIR = "data/processed_files"
+RAW = "raw_data/"
+OUT_DIR = "TFT/data/processed_files"
 os.makedirs(OUT_DIR, exist_ok=True)
 
 

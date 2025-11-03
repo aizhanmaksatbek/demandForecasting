@@ -9,7 +9,7 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from sklearn.preprocessing import StandardScaler
-from models.tft import TemporalFusionTransformer, QuantileLoss
+from architecture.tft import TemporalFusionTransformer, QuantileLoss
 from data.dataset import TFTWindowDataset, tft_collate
 
 # Add src to path
@@ -71,7 +71,7 @@ def main():
     os.makedirs("checkpoints", exist_ok=True)
 
     # Load panel
-    panel_path = os.path.join("data", "processed_files", "panel.csv")
+    panel_path = os.path.join("TFT", "data", "processed_files", "panel.csv")
     assert os.path.exists(panel_path), "Run data preprocessing first: python src/data/preprocess_favorita.py"
     df = pd.read_csv(panel_path, parse_dates=["date"])
 
