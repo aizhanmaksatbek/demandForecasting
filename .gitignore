@@ -9,3 +9,4 @@ data/processed_files/
 # Weights & Biases files
 data/processing_scripts/wandb/
 *.pyc
+*.pt
