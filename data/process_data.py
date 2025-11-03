@@ -1,6 +1,5 @@
 import os
 import pandas as pd
-import numpy as np
 
 
 RAW = "data/source_files"

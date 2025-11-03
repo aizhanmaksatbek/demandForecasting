@@ -5,3 +5,8 @@ nbformat
 scikit-learn
 darts
 plotly
+
+torch
+numpy
+tqdm
+pyarrow
