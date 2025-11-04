@@ -9,3 +9,4 @@ venv_demand/
 data/processing_scripts/wandb/
 *.pyc
 *.pt
+*.npy
