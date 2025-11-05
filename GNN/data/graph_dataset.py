@@ -49,7 +49,10 @@ class GraphDemandDataset(Dataset):
         # Build node map and canonical node_id list (sorted, unique)
         self.node_df = nodes.copy()
         node_ids = (
-            nodes["node_id"].astype(int).drop_duplicates().sort_values().tolist()
+            nodes["node_id"].astype(int)
+            .drop_duplicates()
+            .sort_values()
+            .tolist()
         )
         key = df.merge(nodes, on=["store_nbr", "family"], how="inner")
         # Keep only rows present in node_index mapping
@@ -77,22 +80,28 @@ class GraphDemandDataset(Dataset):
         X_parts = []
         df = df.sort_values([self.date_col, "node_id"])
         for col in self.feature_cols:
-            # Ensure uniqueness on (date, node_id) before pivot and collapse duplicate columns
+            # Ensure uniqueness on (date, node_id) before pivot
+            # and collapse duplicate columns
             tmp = df[[self.date_col, "node_id", col]].copy()
-            # If duplicate column labels exist for `col`, reduce to first column
+            # If duplicate column labels exist for `col`,
+            # reduce to first column
             val = tmp[col]
             if isinstance(val, pd.DataFrame):
                 val = val.iloc[:, 0]
             tmp = tmp.drop(columns=[col])
             tmp["_val"] = val
             tmp = (
-                tmp.groupby([self.date_col, "node_id"], as_index=False)["_val"].first()
-            )
-            wide = tmp.pivot(index=self.date_col, columns="node_id", values="_val")
+                tmp.groupby([self.date_col, "node_id"],
+                            as_index=False)["_val"].first()
+                            )
+            wide = tmp.pivot(index=self.date_col,
+                             columns="node_id",
+                             values="_val")
             # If any duplicate columns slipped through, collapse by first
             if getattr(wide.columns, "has_duplicates", False):
                 wide = wide.T.groupby(level=0).first().T
-            # Force exact [T, N] layout aligned to canonical node_ids and all dates
+            # Force exact [T, N] layout aligned to canonical node_ids
+            # and all dates
             wide = wide.reindex(index=dates, columns=node_ids)
             wide = wide.fillna(0.0)
             mat = wide.to_numpy(dtype=np.float32)
@@ -100,7 +109,8 @@ class GraphDemandDataset(Dataset):
         X = np.concatenate(X_parts, axis=2)  # [T, N, F]
 
         tmp_y = df[[self.date_col, "node_id", self.target_col]].copy()
-        # If duplicate column labels exist for target, reduce to first, then aggregate
+        # If duplicate column labels exist for target,
+        # reduce to first, then aggregate
         val_y = tmp_y[self.target_col]
         if isinstance(val_y, pd.DataFrame):
             val_y = val_y.iloc[:, 0]
@@ -108,9 +118,11 @@ class GraphDemandDataset(Dataset):
         tmp_y["_tgt"] = val_y
         # Sum duplicate entries for targets (e.g., multiple records per day)
         tmp_y = (
-            tmp_y.groupby([self.date_col, "node_id"], as_index=False)["_tgt"].sum()
-        )
-        wide_y = tmp_y.pivot(index=self.date_col, columns="node_id", values="_tgt")
+            tmp_y.groupby([self.date_col, "node_id"],
+                          as_index=False)["_tgt"].sum()
+                          )
+        wide_y = tmp_y.pivot(index=self.date_col,
+                             columns="node_id", values="_tgt")
         if getattr(wide_y.columns, "has_duplicates", False):
             wide_y = wide_y.T.groupby(level=0).sum().T
         wide_y = wide_y.reindex(index=dates, columns=node_ids).fillna(0.0)
