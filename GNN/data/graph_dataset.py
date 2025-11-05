@@ -1,15 +1,16 @@
 from typing import List, Tuple, Dict
-import os
 import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
 
+
 class GraphDemandDataset(Dataset):
     """
     Spatio-temporal sliding window dataset for multi-horizon forecasting.
 
-    - Nodes are (store_nbr, family) pairs defined by data/processed/node_index.csv
+    - Nodes are (store_nbr, family) pairs
+        defined by data/processed/node_index.csv
     - Features X: [T, N, F] built from panel.csv
     - Target Y (sales): [T, N]
 
@@ -49,10 +50,16 @@ class GraphDemandDataset(Dataset):
         self.node_df = nodes.copy()
         key = df.merge(nodes, on=["store_nbr", "family"], how="inner")
         # Keep only rows present in node_index mapping
-        df = key[["date", "store_nbr", "family"] + self.feature_cols + [self.target_col, "node_id"]].copy()
+        df = (key[["date", "store_nbr", "family"]
+                  + self.feature_cols
+                  + [self.target_col, "node_id"]
+                  ].copy())
 
         # Build continuous date index
-        dates = pd.date_range(df[self.date_col].min(), df[self.date_col].max(), freq="D")
+        dates = (pd.date_range(
+            df[self.date_col].min(),
+            df[self.date_col].max(), freq="D")
+            )
         self.dates = dates
 
         # Pivot per feature into [T, N] and stack into [T, N, F]
@@ -61,12 +68,10 @@ class GraphDemandDataset(Dataset):
         X_parts = []
         df = df.sort_values([self.date_col, "node_id"])
         for col in self.feature_cols:
-            mat = (
-                df.pivot_table(index=self.date_col, columns="node_id", values=col, aggfunc="first")
-                  .reindex(dates)
-                  .sort_index()
-                  .to_numpy(dtype=np.float32)
-            )
+            mat = (df.pivot_table(
+                index=self.date_col, columns="node_id",
+                values=col, aggfunc="first")
+                .reindex(dates).sort_index().to_numpy(dtype=np.float32))
             if mat.shape[1] != N:
                 # Missing some nodes for feature; fill to N
                 pad = np.zeros((mat.shape[0], N), dtype=np.float32)
@@ -75,12 +80,10 @@ class GraphDemandDataset(Dataset):
             X_parts.append(mat[:, :, None])  # [T, N, 1]
         X = np.concatenate(X_parts, axis=2)  # [T, N, F]
 
-        Y = (
-            df.pivot_table(index=self.date_col, columns="node_id", values=self.target_col, aggfunc="first")
-              .reindex(dates)
-              .sort_index()
-              .to_numpy(dtype=np.float32)
-        )  # [T, N]
+        Y = (df.pivot_table(
+            index=self.date_col, columns="node_id",
+            values=self.target_col, aggfunc="first")
+            .reindex(dates).sort_index().to_numpy(dtype=np.float32))  # [T, N]
 
         # Fill NaNs
         X = np.nan_to_num(X, nan=0.0)
@@ -99,9 +102,15 @@ class GraphDemandDataset(Dataset):
             dec_end_date = dates[t + horizon]
             if split == "train" and dec_end_date <= train_end:
                 self.index.append(t)
-            elif split == "val" and (dec_end_date > train_end) and (dec_end_date <= val_end):
+            elif (split == "val"
+                  and (dec_end_date > train_end)
+                  and (dec_end_date <= val_end)
+                  ):
                 self.index.append(t)
-            elif split == "test" and (dec_end_date > val_end) and (dec_end_date <= test_end):
+            elif (split == "test"
+                  and (dec_end_date > val_end)
+                  and (dec_end_date <= test_end)
+                  ):
                 self.index.append(t)
 
     def __len__(self):
