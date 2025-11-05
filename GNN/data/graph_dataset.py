@@ -1,4 +1,4 @@
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Any
 import numpy as np
 import pandas as pd
 import torch
@@ -46,14 +46,23 @@ class GraphDemandDataset(Dataset):
 
         df = pd.read_csv(panel_csv, parse_dates=[date_col])
         nodes = pd.read_csv(node_index_csv)
-        # Build node map
+        # Build node map and canonical node_id list (sorted, unique)
         self.node_df = nodes.copy()
+        node_ids = (
+            nodes["node_id"].astype(int).drop_duplicates().sort_values().tolist()
+        )
         key = df.merge(nodes, on=["store_nbr", "family"], how="inner")
         # Keep only rows present in node_index mapping
-        df = (key[["date", "store_nbr", "family"]
-                  + self.feature_cols
-                  + [self.target_col, "node_id"]
-                  ].copy())
+        df = (
+            key[[
+                "date",
+                "store_nbr",
+                "family",
+                *self.feature_cols,
+                self.target_col,
+                "node_id",
+            ]].copy()
+        )
 
         # Build continuous date index
         dates = (pd.date_range(
@@ -63,27 +72,49 @@ class GraphDemandDataset(Dataset):
         self.dates = dates
 
         # Pivot per feature into [T, N] and stack into [T, N, F]
-        N = len(nodes)
+        N = len(node_ids)
         T = len(dates)
         X_parts = []
         df = df.sort_values([self.date_col, "node_id"])
         for col in self.feature_cols:
-            mat = (df.pivot_table(
-                index=self.date_col, columns="node_id",
-                values=col, aggfunc="first")
-                .reindex(dates).sort_index().to_numpy(dtype=np.float32))
-            if mat.shape[1] != N:
-                # Missing some nodes for feature; fill to N
-                pad = np.zeros((mat.shape[0], N), dtype=np.float32)
-                pad[:, :mat.shape[1]] = mat
-                mat = pad
+            # Ensure uniqueness on (date, node_id) before pivot and collapse duplicate columns
+            tmp = df[[self.date_col, "node_id", col]].copy()
+            # If duplicate column labels exist for `col`, reduce to first column
+            val = tmp[col]
+            if isinstance(val, pd.DataFrame):
+                val = val.iloc[:, 0]
+            tmp = tmp.drop(columns=[col])
+            tmp["_val"] = val
+            tmp = (
+                tmp.groupby([self.date_col, "node_id"], as_index=False)["_val"].first()
+            )
+            wide = tmp.pivot(index=self.date_col, columns="node_id", values="_val")
+            # If any duplicate columns slipped through, collapse by first
+            if getattr(wide.columns, "has_duplicates", False):
+                wide = wide.T.groupby(level=0).first().T
+            # Force exact [T, N] layout aligned to canonical node_ids and all dates
+            wide = wide.reindex(index=dates, columns=node_ids)
+            wide = wide.fillna(0.0)
+            mat = wide.to_numpy(dtype=np.float32)
             X_parts.append(mat[:, :, None])  # [T, N, 1]
         X = np.concatenate(X_parts, axis=2)  # [T, N, F]
 
-        Y = (df.pivot_table(
-            index=self.date_col, columns="node_id",
-            values=self.target_col, aggfunc="first")
-            .reindex(dates).sort_index().to_numpy(dtype=np.float32))  # [T, N]
+        tmp_y = df[[self.date_col, "node_id", self.target_col]].copy()
+        # If duplicate column labels exist for target, reduce to first, then aggregate
+        val_y = tmp_y[self.target_col]
+        if isinstance(val_y, pd.DataFrame):
+            val_y = val_y.iloc[:, 0]
+        tmp_y = tmp_y.drop(columns=[self.target_col])
+        tmp_y["_tgt"] = val_y
+        # Sum duplicate entries for targets (e.g., multiple records per day)
+        tmp_y = (
+            tmp_y.groupby([self.date_col, "node_id"], as_index=False)["_tgt"].sum()
+        )
+        wide_y = tmp_y.pivot(index=self.date_col, columns="node_id", values="_tgt")
+        if getattr(wide_y.columns, "has_duplicates", False):
+            wide_y = wide_y.T.groupby(level=0).sum().T
+        wide_y = wide_y.reindex(index=dates, columns=node_ids).fillna(0.0)
+        Y = wide_y.to_numpy(dtype=np.float32)  # [T, N]
 
         # Fill NaNs
         X = np.nan_to_num(X, nan=0.0)
@@ -98,7 +129,7 @@ class GraphDemandDataset(Dataset):
         train_end, val_end, test_end = split_bounds
         self.index = []
         # anchor t is last encoder index (inclusive)
-        for t in range(enc_len - 1, T - horizon - 1):
+        for t in range(enc_len - 1, T - horizon):
             dec_end_date = dates[t + horizon]
             if split == "train" and dec_end_date <= train_end:
                 self.index.append(t)
@@ -116,7 +147,7 @@ class GraphDemandDataset(Dataset):
     def __len__(self):
         return len(self.index)
 
-    def __getitem__(self, i: int) -> Dict[str, torch.Tensor]:
+    def __getitem__(self, i: int) -> Dict[str, Any]:
         t = self.index[i]
         x_hist = self.X[t - self.enc_len + 1: t + 1]      # [L_enc, N, F]
         y_fut = self.Y[t + 1: t + 1 + self.horizon]       # [H, N]
