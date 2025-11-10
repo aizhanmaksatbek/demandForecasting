@@ -10,15 +10,15 @@ Outputs:
     where A_hat = D^{-1/2}(A + I)D^{-1/2}
 
 Assumptions:
-- raw_data/train.csv, stores.csv, transactions.csv (transactions optional)
-- raw_data/holidays_events.csv optional (not used here directly)
+- data_raw/train.csv, stores.csv, transactions.csv (transactions optional)
+- data_raw/holidays_events.csv optional (not used here directly)
 """
 
 import os
 import numpy as np
 import pandas as pd
 
-RAW = "raw_data"
+RAW = "data_raw"
 PROC = "GNN/data/"
 os.makedirs(PROC, exist_ok=True)
 
