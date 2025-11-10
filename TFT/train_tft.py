@@ -2,7 +2,6 @@ import argparse
 import os
 import sys
 from typing import Dict, List
-
 import numpy as np
 import pandas as pd
 import torch
@@ -10,7 +9,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from sklearn.preprocessing import StandardScaler
 from architecture.tft import TemporalFusionTransformer, QuantileLoss
-from data.dataset import TFTWindowDataset, tft_collate
+from TFT.tft_dataset import TFTWindowDataset, tft_collate
 
 # Add src to path
 CUR_DIR = os.path.dirname(__file__)
@@ -68,10 +67,10 @@ def main():
 
     set_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    os.makedirs("checkpoints", exist_ok=True)
+    os.makedirs(os.path.join("TFT", "checkpoints"), exist_ok=True)
 
     # Load panel
-    panel_path = os.path.join("TFT", "data", "processed_files", "panel.csv")
+    panel_path = os.path.join("TFT", "data", "panel.csv")
     assert os.path.exists(panel_path), "Run data preprocessing first: python src/data/preprocess_favorita.py"
     df = pd.read_csv(panel_path, parse_dates=["date"])
 
@@ -134,7 +133,7 @@ def main():
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-5)
 
     best_val = float("inf")
-    best_path = os.path.join("checkpoints", "tft_best.pt")
+    best_path = os.path.join("TFT", "checkpoints", "tft_best.pt")
 
     # Training loop
     for epoch in range(1, args.epochs + 1):
