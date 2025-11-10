@@ -10,3 +10,5 @@ data/processing_scripts/wandb/
 *.pyc
 *.pt
 *.npy
+__pycache__/
+

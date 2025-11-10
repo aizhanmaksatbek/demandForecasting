@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 
 RAW = "raw_data"
-PROC = "GNN/data/processed"
+PROC = "GNN/data/"
 os.makedirs(PROC, exist_ok=True)
 
 

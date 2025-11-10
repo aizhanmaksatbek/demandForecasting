@@ -6,7 +6,7 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from data.graph_dataset import GraphDemandDataset
+from GNN.graph_dataset import GraphDemandDataset
 from architecture.stgnn import STGNN, QuantileLoss
 
 
@@ -46,9 +46,9 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     os.makedirs("checkpoints", exist_ok=True)
 
-    panel_csv = os.path.join("GNN", "data", "processed", "panel.csv")
-    node_index_csv = os.path.join("GNN", "data", "processed", "node_index.csv")
-    adj_path = os.path.join("GNN", "data", "processed", "adjacency.npy")
+    panel_csv = os.path.join("GNN", "data", "panel.csv")
+    node_index_csv = os.path.join("GNN", "data", "node_index.csv")
+    adj_path = os.path.join("GNN", "data", "adjacency.npy")
     assert os.path.exists(panel_csv), (
         "Run preprocessing to create data/processed/panel.csv"
     )
@@ -87,7 +87,6 @@ def main():
             scaler[col] = (float(mu), float(sd))
         # write scaled panel temp
         panel_csv_scaled = os.path.join("GNN", "data",
-                                        "processed",
                                         "panel_scaled.csv"
                                         )
         df.to_csv(panel_csv_scaled, index=False)
