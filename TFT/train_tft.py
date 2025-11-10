@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from sklearn.preprocessing import StandardScaler
 from architecture.tft import TemporalFusionTransformer, QuantileLoss
-from TFT.tft_dataset import TFTWindowDataset, tft_collate
+from tft_dataset import TFTWindowDataset, tft_collate
 
 # Add src to path
 CUR_DIR = os.path.dirname(__file__)
@@ -52,7 +52,7 @@ def main():
     parser.add_argument("--enc-len", type=int, default=56)
     parser.add_argument("--dec-len", type=int, default=28)
     parser.add_argument("--batch-size", type=int, default=256)
-    parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument("--epochs", type=int, default=0)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--hidden-dim", type=int, default=128)
     parser.add_argument("--d-model", type=int, default=64)
@@ -71,12 +71,23 @@ def main():
 
     # Load panel
     panel_path = os.path.join("TFT", "data", "panel.csv")
-    assert os.path.exists(panel_path), "Run data preprocessing first: python src/data/preprocess_favorita.py"
+    assert os.path.exists(panel_path), (
+        "Run data preprocessing first: "
+        "python src/data/preprocess_favorita.py"
+    )
     df = pd.read_csv(panel_path, parse_dates=["date"])
 
     # Define variables
-    enc_vars = ["sales", "transactions", "dcoilwtico", "onpromotion", "dow", "month", "weekofyear", "is_holiday", "is_workday"]  # encoder features
-    dec_vars = ["onpromotion", "dow", "month", "weekofyear", "is_holiday", "is_workday"]                                       # known future
+    # encoder features
+    enc_vars = [
+        "sales", "transactions", "dcoilwtico", "onpromotion",
+        "dow", "month", "weekofyear", "is_holiday", "is_workday",
+    ]
+    # known future features
+    dec_vars = [
+        "onpromotion", "dow", "month", "weekofyear",
+        "is_holiday", "is_workday",
+    ]
     static_cols = ["store_nbr", "family", "state", "cluster"]
 
     # Scale continuous features (fit on train period only)
@@ -91,8 +102,12 @@ def main():
     reals_to_scale = ["transactions", "dcoilwtico"]
     scaler = StandardScaler()
     train_mask = df["date"] <= train_end
-    df.loc[train_mask, reals_to_scale] = scaler.fit_transform(df.loc[train_mask, reals_to_scale])
-    df.loc[~train_mask, reals_to_scale] = scaler.transform(df.loc[~train_mask, reals_to_scale])
+    df.loc[train_mask, reals_to_scale] = scaler.fit_transform(
+        df.loc[train_mask, reals_to_scale]
+    )
+    df.loc[~train_mask, reals_to_scale] = scaler.transform(
+        df.loc[~train_mask, reals_to_scale]
+    )
 
     # One-hot maps for static features
     static_maps = build_onehot_maps(df, static_cols)
@@ -100,15 +115,39 @@ def main():
 
     # Dataset and loaders
     split_bounds = (train_end, val_end, test_end)
-    train_ds = TFTWindowDataset(df, args.enc_len, args.dec_len, enc_vars, dec_vars, static_cols, split_bounds, split="train", stride=args.stride, static_onehot_maps=static_maps)
-    val_ds = TFTWindowDataset(df, args.enc_len, args.dec_len, enc_vars, dec_vars, static_cols, split_bounds, split="val", stride=args.stride, static_onehot_maps=static_maps)
-    test_ds = TFTWindowDataset(df, args.enc_len, args.dec_len, enc_vars, dec_vars, static_cols, split_bounds, split="test", stride=args.stride, static_onehot_maps=static_maps)
+    train_ds = TFTWindowDataset(
+        df, args.enc_len, args.dec_len, enc_vars, dec_vars, static_cols,
+        split_bounds, split="train", stride=args.stride,
+        static_onehot_maps=static_maps,
+    )
+    val_ds = TFTWindowDataset(
+        df, args.enc_len, args.dec_len, enc_vars, dec_vars, static_cols,
+        split_bounds, split="val", stride=args.stride,
+        static_onehot_maps=static_maps,
+    )
+    test_ds = TFTWindowDataset(
+        df, args.enc_len, args.dec_len, enc_vars, dec_vars, static_cols,
+        split_bounds, split="test", stride=args.stride,
+        static_onehot_maps=static_maps,
+    )
 
-    train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=True, collate_fn=tft_collate)
-    val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False, num_workers=4, pin_memory=True, collate_fn=tft_collate)
-    test_loader = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False, num_workers=4, pin_memory=True, collate_fn=tft_collate)
+    train_loader = DataLoader(
+        train_ds, batch_size=args.batch_size, shuffle=True,
+        num_workers=4, pin_memory=True, collate_fn=tft_collate,
+    )
+    val_loader = DataLoader(
+        val_ds, batch_size=args.batch_size, shuffle=False,
+        num_workers=4, pin_memory=True, collate_fn=tft_collate,
+    )
+    test_loader = DataLoader(
+        test_ds, batch_size=args.batch_size, shuffle=False,
+        num_workers=4, pin_memory=True, collate_fn=tft_collate,
+    )
 
-    print(f"Train samples: {len(train_ds)} | Val: {len(val_ds)} | Test: {len(test_ds)}")
+    print(
+        f"Train samples: {len(train_ds)} | "
+        f"Val: {len(val_ds)} | Test: {len(test_ds)}"
+    )
 
     # Model
     past_input_dims = [1] * len(enc_vars)
@@ -130,7 +169,9 @@ def main():
     ).to(device)
 
     criterion = QuantileLoss(quantiles=quantiles)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-5)
+    optimizer = torch.optim.Adam(
+        model.parameters(), lr=args.lr, weight_decay=1e-5
+    )
 
     best_val = float("inf")
     best_path = os.path.join("TFT", "checkpoints", "tft_best.pt")
@@ -142,8 +183,8 @@ def main():
         pbar = tqdm(train_loader, desc=f"Epoch {epoch}/{args.epochs} [train]")
         for batch in pbar:
             past = batch["past_inputs"].to(device)     # [B, L_enc, E]
-            future = batch["future_inputs"].to(device) # [B, L_dec, D]
-            static = batch["static_inputs"].to(device) # [B, S]
+            future = batch["future_inputs"].to(device)  # [B, L_dec, D]
+            static = batch["static_inputs"].to(device)  # [B, S]
             y = batch["target"].to(device)             # [B, L_dec]
 
             optimizer.zero_grad()
@@ -169,11 +210,21 @@ def main():
                 loss = criterion(out["prediction"], y)
                 val_loss += loss.item() * past.size(0)
         val_loss /= max(len(val_ds), 1)
-        print(f"Epoch {epoch}: train_loss={train_loss:.5f} val_loss={val_loss:.5f}")
+        print(
+            f"Epoch {epoch}: train_loss={train_loss:.5f} "
+            f"val_loss={val_loss:.5f}"
+        )
 
         if val_loss < best_val:
             best_val = val_loss
-            torch.save({"model_state": model.state_dict(), "cfg": vars(args), "quantiles": quantiles}, best_path)
+            torch.save(
+                {
+                    "model_state": model.state_dict(),
+                    "cfg": vars(args),
+                    "quantiles": quantiles,
+                },
+                best_path,
+            )
             print(f"Saved best model to {best_path}")
 
     # Load best and evaluate on test
@@ -194,9 +245,12 @@ def main():
                 static = batch["static_inputs"].to(device)
                 y = batch["target"].to(device)
                 out = model(past, future, static, return_attention=False)
-                total_loss += criterion(out["prediction"], y).item() * past.size(0)
+                total_loss += (
+                    criterion(out["prediction"], y).item() * past.size(0)
+                )
                 # take median quantile as point forecast
-                Q = out["prediction"].size(-1)
+                # number of quantiles (unused variable)
+                # _Q = out["prediction"].size(-1)  # (ignored)
                 median_idx = int(np.argmin([abs(q - 0.5) for q in quantiles]))
                 yhat = out["prediction"][..., median_idx]
                 ys.append(y.detach().cpu().numpy())
@@ -210,8 +264,83 @@ def main():
 
     val_pinball, val_wape, val_smape = eval_loader(val_loader)
     test_pinball, test_wape, test_smape = eval_loader(test_loader)
-    print(f"Validation  - Pinball: {val_pinball:.5f} | WAPE: {val_wape:.5f} | sMAPE: {val_smape:.5f}")
-    print(f"Test        - Pinball: {test_pinball:.5f} | WAPE: {test_wape:.5f} | sMAPE: {test_smape:.5f}")
+    print(
+        f"Validation  - Pinball: {val_pinball:.5f} | "
+        f"WAPE: {val_wape:.5f} | sMAPE: {val_smape:.5f}"
+    )
+    print(
+        f"Test        - Pinball: {test_pinball:.5f} | "
+        f"WAPE: {test_wape:.5f} | sMAPE: {test_smape:.5f}"
+    )
+
+    # Export per-sample test forecasts (median quantile) for plotting
+    median_idx = int(np.argmin([abs(q - 0.5) for q in quantiles]))
+    rows = []
+    with torch.no_grad():
+        for batch in test_loader:
+            past = batch["past_inputs"].to(device)
+            future = batch["future_inputs"].to(device)
+            static = batch["static_inputs"].to(device)
+            out = model(past, future, static, return_attention=False)
+            preds_med = out["prediction"][..., median_idx]  # [B, L_dec]
+            targets = batch["target"].cpu().numpy()         # [B, L_dec]
+            preds = preds_med.cpu().numpy()
+            metas = batch.get("meta", [])
+            for i, meta in enumerate(metas):
+                store_nbr = meta["store_nbr"]
+                family = meta["family"]
+                fut_dates = meta["future_dates"]
+                for d_idx, date in enumerate(fut_dates):
+                    rows.append({
+                        "date": pd.to_datetime(date),
+                        "store_nbr": store_nbr,
+                        "family": family,
+                        "y_true": float(targets[i, d_idx]),
+                        "y_pred": float(preds[i, d_idx]),
+                    })
+    if rows:
+        test_forecasts_df = (
+            pd.DataFrame(rows)
+            .sort_values(["family", "store_nbr", "date"])
+        )
+        out_csv = os.path.join(
+            "TFT", "checkpoints", "tft_test_forecasts.csv"
+        )
+        test_forecasts_df.to_csv(out_csv, index=False)
+        print(
+            f"Saved test forecasts CSV -> {out_csv} "
+            f"(rows={len(test_forecasts_df)})"
+        )
+        # Quick example plot (first family/store) if matplotlib available
+        try:
+            import matplotlib.pyplot as plt
+            first = test_forecasts_df.iloc[0]
+            fam0 = first.family
+            store0 = first.store_nbr
+            subset = test_forecasts_df[
+                (test_forecasts_df.family == fam0)
+                & (test_forecasts_df.store_nbr == store0)
+            ]
+            plt.figure(figsize=(10, 4))
+            plt.plot(subset.date, subset.y_true, label="Actual", lw=2)
+            plt.plot(subset.date, subset.y_pred, label="Pred", lw=2)
+            plt.title(
+                f"TFT Test Forecast (store={store0}, family={fam0})"
+            )
+            plt.xlabel("Date")
+            plt.ylabel("Sales")
+            plt.legend()
+            plt.tight_layout()
+            out_png = os.path.join(
+                "TFT",
+                "checkpoints",
+                f"example_plot_store{store0}_family_{fam0}.png",
+            )
+            plt.savefig(out_png, dpi=150)
+            plt.close()
+            print(f"Saved example plot -> {out_png}")
+        except Exception as e:
+            print(f"(skip example plot) {e}")
 
 
 if __name__ == "__main__":
