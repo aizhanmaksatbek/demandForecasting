@@ -6,7 +6,7 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from GNN.graph_dataset import GraphDemandDataset
+from graph_dataset import GraphDemandDataset
 from architecture.stgnn import STGNN, QuantileLoss
 
 
@@ -32,7 +32,7 @@ def main():
     parser.add_argument("--enc-len", type=int, default=56)
     parser.add_argument("--horizon", type=int, default=28)
     parser.add_argument("--batch-size", type=int, default=32)
-    parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument("--epochs", type=int, default=0)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--hidden", type=int, default=64)
     parser.add_argument("--blocks", type=int, default=3)
