@@ -291,7 +291,7 @@ class TemporalFusionTransformer(nn.Module):
 
         # [B, L_total, d_model]
         seq_inputs = torch.cat([enc_selected, dec_selected], dim=1)
-        h0, c0 = self._init_lstm_state(c_state_h, c_state_c, B)
+        h0, c0 = self._init_lstm_state(c_state_h, c_state_c)
         # [B, L_total, H]
         lstm_out, _ = self.lstm(seq_inputs, (h0, c0))
         # [B, L_total, d_model]

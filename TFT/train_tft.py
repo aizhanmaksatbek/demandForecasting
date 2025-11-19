@@ -52,7 +52,7 @@ def main():
     parser.add_argument("--enc-len", type=int, default=56)
     parser.add_argument("--dec-len", type=int, default=28)
     parser.add_argument("--batch-size", type=int, default=256)
-    parser.add_argument("--epochs", type=int, default=0)
+    parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--hidden-dim", type=int, default=128)
     parser.add_argument("--d-model", type=int, default=64)
