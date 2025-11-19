@@ -26,9 +26,11 @@ def make_holidays(hol):
     hol = hol.copy()
     hol["transferred"] = hol["transferred"].fillna(False).astype(bool)
     hol["is_holiday"] = 0
-    hol.loc[(hol["type"].isin(["Holiday", "Additional"])) & (~hol["transferred"]), "is_holiday"] = 1
+    hol.loc[(hol["type"].isin(["Holiday", "Additional"])) &
+            (~hol["transferred"]), "is_holiday"] = 1
     hol["is_workday"] = (hol["type"] == "Work Day").astype("int8")
-    hol = hol[["date", "is_holiday", "is_workday"]].groupby("date", as_index=False).max()
+    hol = (hol[["date", "is_holiday", "is_workday"]]
+           .groupby("date", as_index=False).max())
     return hol
 
 
@@ -46,19 +48,29 @@ def preprocess():
     date_min, date_max = df["date"].min(), df["date"].max()
     stores_u = df[["store_nbr"]].drop_duplicates()
     family_u = df[["family"]].drop_duplicates()
-    full = stores_u.assign(key=1).merge(family_u.assign(key=1), on="key", how="outer").drop("key", axis=1)
+    full = (stores_u.assign(key=1)
+            .merge(family_u.assign(key=1), on="key", how="outer")
+            .drop("key", axis=1)
+            )
     cal = make_calendar(date_min, date_max, "date")
-    full = full.assign(key=1).merge(cal.assign(key=1), on="key", how="outer").drop("key", axis=1)
+    full = (full.assign(key=1)
+            .merge(cal.assign(key=1), on="key", how="outer")
+            .drop("key", axis=1)
+            )
     df = full.merge(df, on=["date", "store_nbr", "family"], how="left")
 
     # store metadata
     if stores is not None:
         stores = stores.rename(columns={"type": "store_type"})
-        df = df.merge(stores[["store_nbr", "state", "store_type", "cluster"]], on="store_nbr", how="left")
+        df = df.merge(stores[["store_nbr", "state", "store_type", "cluster"]],
+                      on="store_nbr", how="left"
+                      )
 
     # transactions
     if trans is not None:
-        df = df.merge(trans[["date", "store_nbr", "transactions"]], on=["date", "store_nbr"], how="left")
+        df = df.merge(trans[["date", "store_nbr", "transactions"]],
+                      on=["date", "store_nbr"], how="left"
+                      )
 
     # oil price (forward fill)
     if oil is not None:
