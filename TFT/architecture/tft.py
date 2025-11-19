@@ -1,5 +1,5 @@
 """
-Temporal Fusion Transformer (TFT) — PyTorch single-file implementation
+Temporal Fusion Transformer (TFT) — PyTorch implementation
 
 Core features:
 - Variable Selection Networks (static, encoder-time, decoder-time)
@@ -9,7 +9,8 @@ Core features:
 - Position-wise GRN and quantile output head
 - Returns interpretable weights (variable selection, attention)
 
-See: Lim et al., "Temporal Fusion Transformers for Interpretable Multi-horizon Time Series Forecasting" (2021)
+Ref: Lim et al., "Temporal Fusion Transformers for Interpretable
+    Multi-horizon Time Series Forecasting" (2021)
 """
 
 from typing import List, Optional, Tuple, Union, Dict
@@ -19,7 +20,8 @@ import torch.nn.functional as F
 
 
 def _split_features(x: torch.Tensor, dims: List[int]) -> List[torch.Tensor]:
-    assert x.size(-1) == sum(dims), f"Expected last dim {sum(dims)}, got {x.size(-1)}"
+    assert x.size(-1) == sum(dims), f"Expected last dim {sum(dims)}, \
+        got {x.size(-1)}"
     outs = []
     start = 0
     for d in dims:
@@ -40,14 +42,16 @@ def _ensure_list(
 
 
 class GatedResidualNetwork(nn.Module):
-    def __init__(self, d_in: int, hidden_dim: int, d_out: int, context_dim: Optional[int] = None, dropout: float = 0.0):
+    def __init__(self, d_in: int, hidden_dim: int, d_out: int,
+                 context_dim: Optional[int] = None, dropout: float = 0.0):
         super().__init__()
         self.fc1 = nn.Linear(d_in, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, 2 * d_out)
         self.elu = nn.ELU()
         self.layer_norm = nn.LayerNorm(d_out)
         self.skip = nn.Linear(d_in, d_out) if d_in != d_out else nn.Identity()
-        self.context_proj = nn.Linear(context_dim, d_in) if context_dim is not None else None
+        self.context_proj = (nn.Linear(context_dim, d_in)
+                             if context_dim is not None else None)
         self.dropout = nn.Dropout(dropout)
 
     @staticmethod
@@ -55,7 +59,8 @@ class GatedResidualNetwork(nn.Module):
         a, b = x.chunk(2, dim=-1)
         return a * torch.sigmoid(b)
 
-    def forward(self, x: torch.Tensor, context: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor,
+                context: Optional[torch.Tensor] = None) -> torch.Tensor:
         if (context is not None) and (self.context_proj is not None):
             if context.dim() == x.dim() - 1:
                 for _ in range(x.dim() - context.dim()):
@@ -72,31 +77,48 @@ class GatedResidualNetwork(nn.Module):
 
 
 class VariableSelectionNetwork(nn.Module):
-    def __init__(self, input_dims: List[int], d_model: int, hidden_dim: int, context_dim: Optional[int], temporal: bool, dropout: float = 0.0):
+    def __init__(self, input_dims: List[int],
+                 d_model: int, hidden_dim: int,
+                 context_dim: Optional[int],
+                 temporal: bool, dropout: float = 0.0):
         super().__init__()
         self.input_dims = input_dims
         self.V = len(input_dims)
         self.temporal = temporal
-        self.value_encoders = nn.ModuleList([nn.Linear(d, d_model) for d in input_dims])
-        self.weight_net = GatedResidualNetwork(sum(input_dims), hidden_dim, self.V, context_dim=context_dim, dropout=dropout)
+        self.value_encoders = nn.ModuleList([nn.Linear(d, d_model)
+                                             for d in input_dims])
+        self.weight_net = GatedResidualNetwork(
+            sum(input_dims),
+            hidden_dim, self.V,
+            context_dim=context_dim,
+            dropout=dropout
+            )
         self.softmax = nn.Softmax(dim=-1)
 
-    def forward(self, inputs: Union[List[torch.Tensor], torch.Tensor], context: Optional[torch.Tensor] = None):
-        xs = inputs if isinstance(inputs, list) else _split_features(inputs, self.input_dims)
+    def forward(self,
+                inputs: Union[List[torch.Tensor], torch.Tensor],
+                context: Optional[torch.Tensor] = None):
+        xs = (inputs if isinstance(inputs, list)
+              else _split_features(inputs, self.input_dims)
+              )
         assert len(xs) == self.V
         if self.temporal:
             encoded = [enc(x) for enc, x in zip(self.value_encoders, xs)]
             enc_stack = torch.stack(encoded, dim=-2)  # [B, T, V, d_model]
             x_cat = torch.cat(xs, dim=-1)            # [B, T, sum(d)]
-            weights = self.softmax(self.weight_net(x_cat, context=context))  # [B, T, V]
-            selected = torch.sum(enc_stack * weights.unsqueeze(-1), dim=-2)  # [B, T, d_model]
+            # [B, T, V]
+            weights = self.softmax(self.weight_net(x_cat, context=context))
+            # [B, T, d_model]
+            selected = torch.sum(enc_stack * weights.unsqueeze(-1), dim=-2)
             return selected, weights
         else:
             encoded = [enc(x) for enc, x in zip(self.value_encoders, xs)]
             enc_stack = torch.stack(encoded, dim=-2)  # [B, V, d_model]
             x_cat = torch.cat(xs, dim=-1)            # [B, sum(d)]
-            weights = self.softmax(self.weight_net(x_cat, context=context))  # [B, V]
-            selected = torch.sum(enc_stack * weights.unsqueeze(-1), dim=-2)  # [B, d_model]
+            # [B, V]
+            weights = self.softmax(self.weight_net(x_cat, context=context))
+            # [B, d_model]
+            selected = torch.sum(enc_stack * weights.unsqueeze(-1), dim=-2)
             return selected, weights
 
 
@@ -127,21 +149,87 @@ class TemporalFusionTransformer(nn.Module):
         self.lstm_hidden_size = lstm_hidden_size
         self.lstm_layers = lstm_layers
 
-        self.static_vsn = VariableSelectionNetwork(static_input_dims, d_model, hidden_dim, context_dim=None, temporal=False, dropout=dropout)
-        self.encoder_vsn = VariableSelectionNetwork(past_input_dims, d_model, hidden_dim, context_dim=d_model, temporal=True, dropout=dropout)
-        self.decoder_vsn = VariableSelectionNetwork(future_input_dims, d_model, hidden_dim, context_dim=d_model, temporal=True, dropout=dropout)
+        self.static_vsn = VariableSelectionNetwork(
+            static_input_dims,
+            d_model,
+            hidden_dim,
+            context_dim=None,
+            temporal=False,
+            dropout=dropout
+            )
+        self.encoder_vsn = VariableSelectionNetwork(
+            past_input_dims,
+            d_model,
+            hidden_dim,
+            context_dim=d_model,
+            temporal=True,
+            dropout=dropout
+            )
+        self.decoder_vsn = VariableSelectionNetwork(
+            future_input_dims,
+            d_model,
+            hidden_dim,
+            context_dim=d_model,
+            temporal=True,
+            dropout=dropout
+            )
 
-        self.static_context_selection = GatedResidualNetwork(d_model, hidden_dim, d_model, context_dim=None, dropout=dropout)
-        self.static_context_enrichment = GatedResidualNetwork(d_model, hidden_dim, d_model, context_dim=None, dropout=dropout)
-        self.static_context_state_h = GatedResidualNetwork(d_model, hidden_dim, d_model, context_dim=None, dropout=dropout)
-        self.static_context_state_c = GatedResidualNetwork(d_model, hidden_dim, d_model, context_dim=None, dropout=dropout)
+        self.static_context_selection = GatedResidualNetwork(
+            d_model,
+            hidden_dim,
+            d_model,
+            context_dim=None,
+            dropout=dropout
+            )
+        self.static_context_enrichment = GatedResidualNetwork(
+            d_model,
+            hidden_dim,
+            d_model,
+            context_dim=None,
+            dropout=dropout
+            )
+        self.static_context_state_h = GatedResidualNetwork(
+            d_model,
+            hidden_dim,
+            d_model,
+            context_dim=None,
+            dropout=dropout
+            )
+        self.static_context_state_c = GatedResidualNetwork(
+            d_model,
+            hidden_dim,
+            d_model,
+            context_dim=None,
+            dropout=dropout
+            )
 
-        self.lstm = nn.LSTM(input_size=d_model, hidden_size=lstm_hidden_size, num_layers=lstm_layers, batch_first=True)
+        self.lstm = nn.LSTM(
+            input_size=d_model,
+            hidden_size=lstm_hidden_size,
+            num_layers=lstm_layers,
+            batch_first=True
+            )
         self.lstm_proj = nn.Linear(lstm_hidden_size, d_model)
 
-        self.mha = nn.MultiheadAttention(embed_dim=d_model, num_heads=n_heads, dropout=dropout, batch_first=True)
-        self.attn_skip_gating = GatedResidualNetwork(d_model, hidden_dim, d_model, context_dim=None, dropout=dropout)
-        self.positionwise_grn = GatedResidualNetwork(d_model, hidden_dim, d_model, context_dim=d_model, dropout=dropout)
+        self.mha = nn.MultiheadAttention(
+            embed_dim=d_model,
+            num_heads=n_heads,
+            dropout=dropout,
+            batch_first=True
+            )
+        self.attn_skip_gating = GatedResidualNetwork(
+            d_model,
+            hidden_dim,
+            d_model,
+            context_dim=None,
+            dropout=dropout)
+        self.positionwise_grn = GatedResidualNetwork(
+            d_model,
+            hidden_dim,
+            d_model,
+            context_dim=d_model,
+            dropout=dropout
+            )
 
         self.output_proj = nn.Linear(d_model, num_quantiles)
 
@@ -150,10 +238,13 @@ class TemporalFusionTransformer(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     @staticmethod
-    def _causal_mask(size_q: int, size_k: int, device: torch.device) -> torch.Tensor:
-        return torch.triu(torch.ones(size_q, size_k, device=device, dtype=torch.bool), diagonal=1)
+    def _causal_mask(size_q: int, size_k: int,
+                     device: torch.device) -> torch.Tensor:
+        return torch.triu(torch.ones(size_q, size_k, device=device,
+                                     dtype=torch.bool), diagonal=1)
 
-    def _init_lstm_state(self, static_ctx_h: torch.Tensor, static_ctx_c: torch.Tensor, batch_size: int):
+    def _init_lstm_state(self, static_ctx_h: torch.Tensor,
+                         static_ctx_c: torch.Tensor):
         h0_single = self.h_init_proj(static_ctx_h)  # [B, H]
         c0_single = self.c_init_proj(static_ctx_c)
         h0 = torch.stack([h0_single] * self.lstm_layers, dim=0).contiguous()
@@ -164,47 +255,65 @@ class TemporalFusionTransformer(nn.Module):
         self,
         past_inputs: Union[List[torch.Tensor], torch.Tensor],
         future_inputs: Union[List[torch.Tensor], torch.Tensor],
-        static_inputs: Optional[Union[List[torch.Tensor], torch.Tensor]] = None,
+        static_inputs: Optional[Union[List[torch.Tensor], torch.Tensor]
+                                ] = None,
         return_attention: bool = False,
     ) -> Dict[str, torch.Tensor]:
-        B = (past_inputs[0].size(0) if isinstance(past_inputs, list) else past_inputs.size(0))
-        device = (past_inputs[0].device if isinstance(past_inputs, list) else past_inputs.device)
+        B = (past_inputs[0].size(0)
+             if isinstance(past_inputs, list) else past_inputs.size(0))
+        device = (past_inputs[0].device
+                  if isinstance(past_inputs, list) else past_inputs.device)
 
         past_list = _ensure_list(past_inputs, self.past_input_dims)
         future_list = _ensure_list(future_inputs, self.future_input_dims)
         if static_inputs is None:
-            static_inputs = torch.zeros(B, sum(self.static_input_dims), device=device)
+            static_inputs = torch.zeros(B, sum(self.static_input_dims),
+                                        device=device)
         static_list = _ensure_list(static_inputs, self.static_input_dims)
 
         L_enc = past_list[0].size(1)
         L_dec = future_list[0].size(1)
         L_total = L_enc + L_dec
 
-        s_selected, s_weights = self.static_vsn(static_list, context=None)  # [B, d_model], [B, V_static]
+        # [B, d_model], [B, V_static]
+        s_selected, s_weights = self.static_vsn(static_list, context=None)
         c_selection = self.static_context_selection(s_selected)
         c_enrichment = self.static_context_enrichment(s_selected)
         c_state_h = self.static_context_state_h(s_selected)
         c_state_c = self.static_context_state_c(s_selected)
 
-        enc_selected, enc_w = self.encoder_vsn(past_list, context=c_selection)   # [B, L_enc, d_model], [B, L_enc, V_enc]
-        dec_selected, dec_w = self.decoder_vsn(future_list, context=c_selection) # [B, L_dec, d_model], [B, L_dec, V_dec]
+        # [B, L_enc, d_model], [B, L_enc, V_enc]
+        enc_selected, enc_w = self.encoder_vsn(past_list, context=c_selection)
+        # [B, L_dec, d_model], [B, L_dec, V_dec]
+        dec_selected, dec_w = self.decoder_vsn(future_list,
+                                               context=c_selection
+                                               )
 
-        seq_inputs = torch.cat([enc_selected, dec_selected], dim=1)  # [B, L_total, d_model]
+        # [B, L_total, d_model]
+        seq_inputs = torch.cat([enc_selected, dec_selected], dim=1)
         h0, c0 = self._init_lstm_state(c_state_h, c_state_c, B)
-        lstm_out, _ = self.lstm(seq_inputs, (h0, c0))                # [B, L_total, H]
-        lstm_out = self.lstm_proj(lstm_out)                          # [B, L_total, d_model]
+        # [B, L_total, H]
+        lstm_out, _ = self.lstm(seq_inputs, (h0, c0))
+        # [B, L_total, d_model]
+        lstm_out = self.lstm_proj(lstm_out)
 
         q = lstm_out[:, L_enc:, :]
         k = lstm_out
         v = lstm_out
         attn_mask = self._causal_mask(L_dec, L_total, device=device)
-        attn_out, attn_weights = self.mha(q, k, v, attn_mask=attn_mask, need_weights=True, average_attn_weights=False)  # [B, n_heads, L_dec, L_total]
+        # [B, n_heads, L_dec, L_total]
+        attn_out, attn_weights = self.mha(q, k, v, attn_mask=attn_mask,
+                                          need_weights=True,
+                                          average_attn_weights=False)
 
         dec_lstm = lstm_out[:, L_enc:, :]
-        attn_skip = self.attn_skip_gating(dec_lstm)
-        attn_residual = F.layer_norm(dec_lstm + attn_out, normalized_shape=(dec_lstm.size(-1),))
+        attn_residual = F.layer_norm(dec_lstm + attn_out,
+                                     normalized_shape=(dec_lstm.size(-1),)
+                                     )
 
-        dec_enriched = self.positionwise_grn(attn_residual, context=c_enrichment)
+        dec_enriched = self.positionwise_grn(attn_residual,
+                                             context=c_enrichment
+                                             )
 
         preds = self.output_proj(self.dropout(dec_enriched))  # [B, L_dec, Q]
 
@@ -222,9 +331,14 @@ class TemporalFusionTransformer(nn.Module):
 class QuantileLoss(nn.Module):
     def __init__(self, quantiles: List[float]):
         super().__init__()
-        self.register_buffer("quantiles", torch.tensor(quantiles, dtype=torch.float32))
+        self.register_buffer(
+            "quantiles",
+            torch.tensor(quantiles, dtype=torch.float32)
+            )
 
-    def forward(self, y_pred: torch.Tensor, y_true: torch.Tensor) -> torch.Tensor:
+    def forward(self,
+                y_pred: torch.Tensor,
+                y_true: torch.Tensor) -> torch.Tensor:
         q = self.quantiles.view(1, 1, -1)  # [1,1,Q]
         e = y_true.unsqueeze(-1) - y_pred  # [B,T,Q]
         loss = torch.maximum(q * e, (q - 1) * e)
