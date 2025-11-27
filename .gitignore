@@ -11,4 +11,4 @@ data/processing_scripts/wandb/
 *.pt
 *.npy
 __pycache__/
-
+*.png

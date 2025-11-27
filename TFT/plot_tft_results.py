@@ -46,25 +46,181 @@ def plot_store_family(
     if sub.empty:
         print("No rows for that (store, family)")
         return None
-    title = f"TFT Test Forecast (store={store_nbr}, family={family})"
-    out_file = f"plot_store{store_nbr}_family_{family}.png"
-    plot_graph(sub, save_dir, store_nbr, family, title, out_file)
+    """Plot past encoder history and future predictions as one chart.
+
+    - Past segment: uses rows with non-null y_past
+    - Forecast segment: uses y_pred, and overlays y_true if available
+    - Marks the split with a vertical line at the last past date
+    """
+    try:
+        import matplotlib.pyplot as plt
+    except Exception as e:
+        print(f"(install matplotlib) {e}")
+        return None
+
+    past_seg = (
+        sub.dropna(subset=["y_past"]) if "y_past" in sub else pd.DataFrame()
+    )
+    fut_seg = (
+        sub.dropna(subset=["y_pred"]) if "y_pred" in sub else pd.DataFrame()
+    )
+
+    plt.figure(figsize=(10, 4))
+    # Past history
+    if not past_seg.empty:
+        plt.plot(
+            past_seg.date,
+            past_seg.y_past,
+            label="History (past)",
+            color="black",
+            lw=2,
+        )
+        split_date = past_seg.date.max()
+        # Mark split
+        plt.axvline(split_date, color="#888", linestyle="--", lw=1)
+    else:
+        split_date = None
+
+    # Forecast prediction
+    if not fut_seg.empty:
+        plt.plot(
+            fut_seg.date,
+            fut_seg.y_pred,
+            label="Forecast (pred)",
+            color="tab:blue",
+            lw=2,
+        )
+        # Overlay actuals on forecast horizon if present
+        if "y_true" in fut_seg:
+            plt.plot(
+                fut_seg.date,
+                fut_seg.y_true,
+                label="Actual (future)",
+                color="tab:green",
+                lw=2,
+            )
+
+    title = f"TFT: store={store_nbr}, family={family}"
+    plt.title(title)
+    plt.xlabel("Date")
+    plt.ylabel("Sales")
+    plt.legend()
+    plt.tight_layout()
+
+    if save_dir is None:
+        save_dir = os.path.join("TFT", "checkpoints")
+    os.makedirs(save_dir, exist_ok=True)
+    out = os.path.join(save_dir, f"plot_store{store_nbr}_family_{family}.png")
+    plt.savefig(out, dpi=150)
+    plt.close()
+    print(f"Saved {out}")
+    return out
 
 
 def plot_family_aggregate(df: pd.DataFrame, family: str, save_dir: str = None):
-    sub = (
-        df[df.family == family]
-        .groupby("date", as_index=False)[["y_true", "y_pred"]]
-        .sum()
-        .sort_values("date")
-    )
-    if sub.empty:
+    fam_df = df[df.family == family]
+    if fam_df.empty:
         print("No rows for that family")
         return None
 
-    title = f"Family aggregate: {family}"
-    out_file = f"plot_family_{family}_aggregate.png"
-    plot_graph(sub, save_dir, title, out_file)
+    # Past history aggregate (deduplicate overlapping windows per store/date)
+    past_agg = pd.DataFrame()
+    stores_with_past = []
+    if "y_past" in fam_df:
+        fam_past = fam_df.dropna(subset=["y_past"])  # keep only past rows
+        # Deduplicate: one value per (store, date)
+        fam_past = (
+            fam_past.groupby(["store_nbr", "date"], as_index=False)
+            .agg({"y_past": "last"})
+        )
+        stores_with_past = sorted(fam_past.store_nbr.unique())
+        past_agg = (
+            fam_past.groupby("date", as_index=False)[["y_past"]]
+            .sum()
+            .sort_values("date")
+        )
+
+    # Future predictions and actuals aggregate (sum over stores)
+    # Restrict future aggregation to same store set as past
+    future_df = fam_df
+    if stores_with_past:
+        future_df = fam_df[fam_df.store_nbr.isin(stores_with_past)]
+
+    pred_agg = pd.DataFrame()
+    if "y_pred" in future_df:
+        fut_pred = future_df.dropna(subset=["y_pred"])  # forecast rows
+        # Deduplicate by (store, date) before summing
+        fut_pred = (
+            fut_pred.groupby(["store_nbr", "date"], as_index=False)
+            .agg({"y_pred": "last"})
+        )
+        pred_agg = (
+            fut_pred.groupby("date", as_index=False)[["y_pred"]]
+            .sum()
+            .sort_values("date")
+        )
+    true_agg = pd.DataFrame()
+    if "y_true" in future_df:
+        fut_true = future_df.dropna(subset=["y_true"])  # actual rows
+        fut_true = (
+            fut_true.groupby(["store_nbr", "date"], as_index=False)
+            .agg({"y_true": "last"})
+        )
+        true_agg = (
+            fut_true.groupby("date", as_index=False)[["y_true"]]
+            .sum()
+            .sort_values("date")
+        )
+
+    plt.figure(figsize=(10, 4))
+    split_date = None
+    if not past_agg.empty:
+        plt.plot(
+            past_agg.date,
+            past_agg.y_past,
+            label="History (sum)",
+            color="black",
+            lw=2,
+        )
+        split_date = past_agg.date.max()
+        plt.axvline(split_date, color="#888", linestyle="--", lw=1)
+    if not pred_agg.empty:
+        plt.plot(
+            pred_agg.date,
+            pred_agg.y_pred,
+            label="Forecast (sum)",
+            color="tab:blue",
+            lw=2,
+        )
+    if not true_agg.empty:
+        # If we have a split date, start actuals after it to avoid overlap
+        if split_date is not None:
+            true_agg_plot = true_agg[true_agg.date > split_date]
+        else:
+            true_agg_plot = true_agg
+        if not true_agg_plot.empty:
+            plt.plot(
+                true_agg_plot.date,
+                true_agg_plot.y_true,
+                label="Actual (sum)",
+                color="tab:green",
+                lw=2,
+            )
+
+    plt.title(f"Family aggregate: {family}")
+    plt.xlabel("Date")
+    plt.ylabel("Sales (sum across stores)")
+    plt.legend()
+    plt.tight_layout()
+
+    if save_dir is None:
+        save_dir = os.path.join("TFT", "checkpoints")
+    os.makedirs(save_dir, exist_ok=True)
+    out = os.path.join(save_dir, f"plot_family_{family}_aggregate.png")
+    plt.savefig(out, dpi=150)
+    plt.close()
+    print(f"Saved {out}")
+    return out
 
 
 def plot_family_all_stores(
@@ -73,12 +229,6 @@ def plot_family_all_stores(
     max_cols: int = 4,
     save_dir: str = None,
 ):
-    try:
-        import matplotlib.pyplot as plt
-    except Exception as e:
-        print(f"(install matplotlib) {e}")
-        return None
-
     sub = df[df.family == family]
     stores = sorted(sub.store_nbr.unique())
     if not stores:
@@ -93,8 +243,47 @@ def plot_family_all_stores(
     for i, store in enumerate(stores):
         ssub = sub[sub.store_nbr == store].sort_values("date")
         ax = axes[i]
-        ax.plot(ssub.date, ssub.y_true, label="Actual", color="black")
-        ax.plot(ssub.date, ssub.y_pred, label="Pred", color="tab:blue")
+        # Past (history) for store
+        if "y_past" in ssub.columns:
+            ssub_past = ssub.dropna(subset=["y_past"])
+        else:
+            ssub_past = pd.DataFrame()
+        if not ssub_past.empty:
+            ax.plot(
+                ssub_past.date,
+                ssub_past.y_past,
+                label="History (past)",
+                color="black",
+                lw=2,
+            )
+            split_date = ssub_past.date.max()
+            ax.axvline(split_date, color="#888", linestyle="--", lw=1)
+
+        # Future forecast and actuals for store
+        if "y_pred" in ssub.columns:
+            ssub_pred = ssub.dropna(subset=["y_pred"])
+        else:
+            ssub_pred = pd.DataFrame()
+        if not ssub_pred.empty:
+            ax.plot(
+                ssub_pred.date,
+                ssub_pred.y_pred,
+                label="Forecast (pred)",
+                color="tab:blue",
+                lw=2,
+            )
+        if "y_true" in ssub.columns:
+            ssub_true = ssub.dropna(subset=["y_true"])
+        else:
+            ssub_true = pd.DataFrame()
+        if not ssub_true.empty:
+            ax.plot(
+                ssub_true.date,
+                ssub_true.y_true,
+                label="Actual (future)",
+                color="tab:green",
+                lw=2,
+            )
         ax.set_title(f"Store {store}")
         ax.tick_params(axis="x", rotation=45)
     for j in range(i + 1, len(axes)):
@@ -118,7 +307,6 @@ if __name__ == "__main__":
     # Simple CLI-less usage example
     forecasts = load_forecasts()
     # Example calls (adjust to your data):
-    # plot_store_family(forecasts, 1, "AUTOMOTIVE")
-    plot_family_all_stores(forecasts, "BOOKS")
-    # plot_family_aggregate(forecasts, "BOOKS")
-    pass
+    plot_store_family(forecasts, 1, "PRODUCE")
+    plot_family_all_stores(forecasts, "PRODUCE")
+    plot_family_aggregate(forecasts, "PRODUCE")

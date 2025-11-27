@@ -52,7 +52,7 @@ def main():
     parser.add_argument("--enc-len", type=int, default=56)
     parser.add_argument("--dec-len", type=int, default=28)
     parser.add_argument("--batch-size", type=int, default=256)
-    parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument("--epochs", type=int, default=0)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--hidden-dim", type=int, default=128)
     parser.add_argument("--d-model", type=int, default=64)
@@ -298,6 +298,19 @@ def main():
                         "y_true": float(targets[i, d_idx]),
                         "y_pred": float(preds[i, d_idx]),
                     })
+                # Append encoder history (past sales) before forecast horizon
+                # Use the 'sales' feature from encoder inputs
+                sales_idx = enc_vars.index("sales")
+                past_dates = meta["past_dates"]
+                for d_idx, date in enumerate(past_dates):
+                    rows.append(
+                        {
+                            "date": pd.to_datetime(date),
+                            "store_nbr": store_nbr,
+                            "family": family,
+                            "y_past": float(past[i, d_idx, sales_idx].cpu()),
+                        }
+                    )
     if rows:
         test_forecasts_df = (
             pd.DataFrame(rows)
