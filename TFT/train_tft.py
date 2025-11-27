@@ -1,6 +1,7 @@
 import argparse
 import os
 import sys
+import random
 from typing import Dict, List
 import numpy as np
 import pandas as pd
@@ -17,7 +18,6 @@ sys.path.append(os.path.join(CUR_DIR, ".."))
 
 
 def set_seed(seed: int = 42):
-    import random
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -311,36 +311,6 @@ def main():
             f"Saved test forecasts CSV -> {out_csv} "
             f"(rows={len(test_forecasts_df)})"
         )
-        # Quick example plot (first family/store) if matplotlib available
-        try:
-            import matplotlib.pyplot as plt
-            first = test_forecasts_df.iloc[0]
-            fam0 = first.family
-            store0 = first.store_nbr
-            subset = test_forecasts_df[
-                (test_forecasts_df.family == fam0)
-                & (test_forecasts_df.store_nbr == store0)
-            ]
-            plt.figure(figsize=(10, 4))
-            plt.plot(subset.date, subset.y_true, label="Actual", lw=2)
-            plt.plot(subset.date, subset.y_pred, label="Pred", lw=2)
-            plt.title(
-                f"TFT Test Forecast (store={store0}, family={fam0})"
-            )
-            plt.xlabel("Date")
-            plt.ylabel("Sales")
-            plt.legend()
-            plt.tight_layout()
-            out_png = os.path.join(
-                "TFT",
-                "checkpoints",
-                f"example_plot_store{store0}_family_{fam0}.png",
-            )
-            plt.savefig(out_png, dpi=150)
-            plt.close()
-            print(f"Saved example plot -> {out_png}")
-        except Exception as e:
-            print(f"(skip example plot) {e}")
 
 
 if __name__ == "__main__":
