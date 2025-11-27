@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+import matplotlib.pyplot as plt
 
 
 def load_forecasts(path: str = None) -> pd.DataFrame:
@@ -13,29 +14,11 @@ def load_forecasts(path: str = None) -> pd.DataFrame:
     return pd.read_csv(path, parse_dates=["date"])
 
 
-def plot_store_family(
-    df: pd.DataFrame,
-    store_nbr: int,
-    family: str,
-    save_dir: str = None,
-):
-    try:
-        import matplotlib.pyplot as plt
-    except Exception as e:
-        print(f"(install matplotlib) {e}")
-        return None
-
-    sub = df[
-        (df.store_nbr == store_nbr) & (df.family == family)
-    ].sort_values("date")
-    if sub.empty:
-        print("No rows for that (store, family)")
-        return None
-
+def plot_graph(sub, save_dir, title=None, out_file=None):
     plt.figure(figsize=(10, 4))
     plt.plot(sub.date, sub.y_true, label="Actual", lw=2)
     plt.plot(sub.date, sub.y_pred, label="Predicted", lw=2)
-    plt.title(f"TFT Test Forecast (store={store_nbr}, family={family})")
+    plt.title(title)
     plt.xlabel("Date")
     plt.ylabel("Sales")
     plt.legend()
@@ -44,11 +27,44 @@ def plot_store_family(
     if save_dir is None:
         save_dir = os.path.join("TFT", "checkpoints")
     os.makedirs(save_dir, exist_ok=True)
-    out = os.path.join(save_dir, f"plot_store{store_nbr}_family_{family}.png")
-    plt.savefig(out, dpi=150)
+    out = os.path.join(save_dir, out_file)
+    plt.savefig(out, dpi=720)
     plt.close()
     print(f"Saved {out}")
     return out
+
+
+def plot_store_family(
+    df: pd.DataFrame,
+    store_nbr: int,
+    family: str,
+    save_dir: str = None,
+):
+    sub = df[
+        (df.store_nbr == store_nbr) & (df.family == family)
+    ].sort_values("date")
+    if sub.empty:
+        print("No rows for that (store, family)")
+        return None
+    title = f"TFT Test Forecast (store={store_nbr}, family={family})"
+    out_file = f"plot_store{store_nbr}_family_{family}.png"
+    plot_graph(sub, save_dir, store_nbr, family, title, out_file)
+
+
+def plot_family_aggregate(df: pd.DataFrame, family: str, save_dir: str = None):
+    sub = (
+        df[df.family == family]
+        .groupby("date", as_index=False)[["y_true", "y_pred"]]
+        .sum()
+        .sort_values("date")
+    )
+    if sub.empty:
+        print("No rows for that family")
+        return None
+
+    title = f"Family aggregate: {family}"
+    out_file = f"plot_family_{family}_aggregate.png"
+    plot_graph(sub, save_dir, title, out_file)
 
 
 def plot_family_all_stores(
@@ -92,44 +108,8 @@ def plot_family_all_stores(
         save_dir = os.path.join("TFT", "checkpoints")
     os.makedirs(save_dir, exist_ok=True)
     out = os.path.join(save_dir, f"plot_family_{family}_all_stores.png")
-    fig.savefig(out, dpi=150)
+    fig.savefig(out, dpi=720)
     plt.close(fig)
-    print(f"Saved {out}")
-    return out
-
-
-def plot_family_aggregate(df: pd.DataFrame, family: str, save_dir: str = None):
-    try:
-        import matplotlib.pyplot as plt
-    except Exception as e:
-        print(f"(install matplotlib) {e}")
-        return None
-
-    sub = (
-        df[df.family == family]
-        .groupby("date", as_index=False)[["y_true", "y_pred"]]
-        .sum()
-        .sort_values("date")
-    )
-    if sub.empty:
-        print("No rows for that family")
-        return None
-
-    plt.figure(figsize=(10, 4))
-    plt.plot(sub.date, sub.y_true, label="Actual (sum)", lw=2)
-    plt.plot(sub.date, sub.y_pred, label="Predicted (sum)", lw=2)
-    plt.title(f"Family aggregate: {family}")
-    plt.xlabel("Date")
-    plt.ylabel("Sales (sum across stores)")
-    plt.legend()
-    plt.tight_layout()
-
-    if save_dir is None:
-        save_dir = os.path.join("TFT", "checkpoints")
-    os.makedirs(save_dir, exist_ok=True)
-    out = os.path.join(save_dir, f"plot_family_{family}_aggregate.png")
-    plt.savefig(out, dpi=150)
-    plt.close()
     print(f"Saved {out}")
     return out
 
@@ -142,35 +122,3 @@ if __name__ == "__main__":
     plot_family_all_stores(forecasts, "BOOKS")
     # plot_family_aggregate(forecasts, "BOOKS")
     pass
-
-
-# # Quick example plot (first family/store) if matplotlib available
-# try:
-#     import matplotlib.pyplot as plt
-#     first = test_forecasts_df.iloc[0]
-#     fam0 = first.family
-#     store0 = first.store_nbr
-#     subset = test_forecasts_df[
-#         (test_forecasts_df.family == fam0)
-#         & (test_forecasts_df.store_nbr == store0)
-#     ]
-#     plt.figure(figsize=(10, 4))
-#     plt.plot(subset.date, subset.y_true, label="Actual", lw=2)
-#     plt.plot(subset.date, subset.y_pred, label="Pred", lw=2)
-#     plt.title(
-#         f"TFT Test Forecast (store={store0}, family={fam0})"
-#     )
-#     plt.xlabel("Date")
-#     plt.ylabel("Sales")
-#     plt.legend()
-#     plt.tight_layout()
-#     out_png = os.path.join(
-#         "TFT",
-#         "checkpoints",
-#         f"example_plot_store{store0}_family_{fam0}.png",
-#     )
-#     plt.savefig(out_png, dpi=150)
-#     plt.close()
-#     print(f"Saved example plot -> {out_png}")
-# except Exception as e:
-#     print(f"(skip example plot) {e}")
