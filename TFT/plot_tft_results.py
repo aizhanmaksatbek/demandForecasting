@@ -230,7 +230,15 @@ def plot_family_all_stores(
     save_dir: str = None,
 ):
     sub = df[df.family == family]
-    stores = sorted(sub.store_nbr.unique())
+    # Prefer stores that have predictions to avoid empty/partial subplots
+    if "y_pred" in sub.columns:
+        has_pred = sub.dropna(subset=["y_pred"])
+    else:
+        has_pred = pd.DataFrame()
+    if not has_pred.empty:
+        stores = sorted(has_pred.store_nbr.unique())
+    else:
+        stores = sorted(sub.store_nbr.unique())
     if not stores:
         print("No stores for that family")
         return None
@@ -272,6 +280,17 @@ def plot_family_all_stores(
                 color="tab:blue",
                 lw=2,
             )
+        else:
+            ax.text(
+                0.5,
+                0.85,
+                "No predictions",
+                transform=ax.transAxes,
+                ha="center",
+                va="center",
+                fontsize=9,
+                color="#666",
+            )
         if "y_true" in ssub.columns:
             ssub_true = ssub.dropna(subset=["y_true"])
         else:
@@ -307,6 +326,6 @@ if __name__ == "__main__":
     # Simple CLI-less usage example
     forecasts = load_forecasts()
     # Example calls (adjust to your data):
-    plot_store_family(forecasts, 1, "PRODUCE")
-    plot_family_all_stores(forecasts, "PRODUCE")
-    plot_family_aggregate(forecasts, "PRODUCE")
+    plot_store_family(forecasts, 41, "SCHOOL AND OFFICE SUPPLIES")
+    plot_family_all_stores(forecasts, "SCHOOL AND OFFICE SUPPLIES")
+    plot_family_aggregate(forecasts, "SCHOOL AND OFFICE SUPPLIES")
