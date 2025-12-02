@@ -239,6 +239,35 @@ def plot_store_family(
         save_dir = os.path.join("GNN", "checkpoints")
     os.makedirs(save_dir, exist_ok=True)
 
+    # Determine encoder history length from checkpoint (fallback to 56)
+    try:
+        panel_csv, _, _, ckpt_path, _ = _default_paths()
+        device = _get_device()
+        _, cfg, _ = _load_checkpoint(ckpt_path, device)
+        enc_len = int(cfg.get("enc_len", 56))
+    except Exception:
+        panel_csv, _, _, _, _ = _default_paths()
+        enc_len = 56
+
+    # Load raw panel to reconstruct encoder input sales history
+    try:
+        panel_df = pd.read_csv(panel_csv, parse_dates=["date"])
+        panel_df = panel_df[
+            (panel_df["store_nbr"] == store_nbr)
+            & (panel_df["family"] == family)
+        ][["date", "sales"]].sort_values("date")
+    except Exception:
+        panel_df = None
+
+    first_test_date = sub.date.min()
+    hist_df = None
+    if panel_df is not None and pd.notnull(first_test_date):
+        start_date = first_test_date - pd.Timedelta(days=enc_len)
+        hist_df = panel_df[
+            (panel_df.date < first_test_date)
+            & (panel_df.date >= start_date)
+        ]
+
     if include_features:
         # Select a few informative features to display
         feat_to_show = [
@@ -258,6 +287,24 @@ def plot_store_family(
         gs = gridspec.GridSpec(2, 1, height_ratios=[2.0, 1.2])
         ax1 = fig.add_subplot(gs[0])
         ax2 = fig.add_subplot(gs[1], sharex=ax1)
+
+        # Top: Input encoder history (sales) before predictions
+        if hist_df is not None and not hist_df.empty:
+            ax1.plot(
+                hist_df.date,
+                hist_df.sales,
+                label="Input (encoder sales)",
+                lw=2,
+                color="tab:gray",
+                alpha=0.8,
+            )
+            # Mark boundary between history and test predictions
+            ax1.axvline(
+                first_test_date,
+                color="tab:gray",
+                linestyle="--",
+                linewidth=1,
+            )
 
         # Top: Actual vs Predicted
         ax1.plot(
@@ -291,6 +338,22 @@ def plot_store_family(
     else:
         import matplotlib.pyplot as plt
         plt.figure(figsize=(10, 4))
+        # Input encoder history line
+        if hist_df is not None and not hist_df.empty:
+            plt.plot(
+                hist_df.date,
+                hist_df.sales,
+                label="Input (encoder sales)",
+                lw=2,
+                color="tab:gray",
+                alpha=0.8,
+            )
+            plt.axvline(
+                first_test_date,
+                color="tab:gray",
+                linestyle="--",
+                linewidth=1,
+            )
         plt.plot(sub.date, sub.y_true, label="Actual", lw=2)
         plt.plot(sub.date, sub.y_pred, label="Predicted", lw=2)
         plt.title(f"STGNN Test Forecast (store={store_nbr}, family={family})")
@@ -328,6 +391,24 @@ def plot_family_all_stores(
         save_dir = os.path.join("GNN", "checkpoints")
     os.makedirs(save_dir, exist_ok=True)
 
+    # Determine encoder history length and panel path
+    try:
+        panel_csv, _, _, ckpt_path, _ = _default_paths()
+        device = _get_device()
+        _, cfg, _ = _load_checkpoint(ckpt_path, device)
+        enc_len = int(cfg.get("enc_len", 56))
+    except Exception:
+        panel_csv, _, _, _, _ = _default_paths()
+        enc_len = 56
+
+    try:
+        panel_full = pd.read_csv(panel_csv, parse_dates=["date"])
+        panel_full = panel_full[panel_full["family"] == family][
+            ["date", "sales", "store_nbr"]
+        ]
+    except Exception:
+        panel_full = None
+
     cols = min(max_cols, len(stores))
     rows = (len(stores) + cols - 1) // cols
     fig, axes = plt.subplots(
@@ -337,6 +418,29 @@ def plot_family_all_stores(
     for i, store in enumerate(stores):
         ssub = sub[sub.store_nbr == store].sort_values("date")
         ax = axes[i]
+        # Plot encoder input history before first test date for each store
+        if panel_full is not None and not ssub.empty:
+            first_test_date = ssub.date.min()
+            start_date = first_test_date - pd.Timedelta(days=enc_len)
+            hist = panel_full[
+                (panel_full.store_nbr == store)
+                & (panel_full.date < first_test_date)
+                & (panel_full.date >= start_date)
+            ]
+            if not hist.empty:
+                ax.plot(
+                    hist.date,
+                    hist.sales,
+                    label="Input",
+                    color="tab:gray",
+                    alpha=0.8,
+                )
+                ax.axvline(
+                    first_test_date,
+                    color="tab:gray",
+                    linestyle="--",
+                    linewidth=1,
+                )
         ax.plot(ssub.date, ssub.y_true, label="Actual", color="black")
         ax.plot(ssub.date, ssub.y_pred, label="Pred", color="tab:blue")
         ax.set_title(f"Store {store}")
@@ -402,8 +506,8 @@ if __name__ == "__main__":
     # with features
     fams = sorted(forecasts.family.dropna().unique())
     if len(fams) > 0:
-        plot_family_all_stores(forecasts, fams[2])
-        sample = forecasts[(forecasts.family == fams[0])].iloc[0]
+        plot_family_all_stores(forecasts, fams[3])
+        sample = forecasts[(forecasts.family == fams[3])].iloc[0]
         plot_store_family(
             forecasts,
             int(sample.store_nbr),
