@@ -68,7 +68,7 @@ You can adjust variables in src/train.py (enc_vars, dec_vars, static columns) as
 
 
 
-# Graph Neural Network for Multi‑horizon Demand Forecasting — Favorita
+# Graph Neural Network for Multi‑Horizon Demand Forecasting — Favorita
 
 This repo adds a spatio‑temporal Graph Neural Network (GNN) baseline for the Kaggle Favorita dataset, predicting multiple future days for all (store, family) nodes jointly.
 
