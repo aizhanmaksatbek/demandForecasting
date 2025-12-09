@@ -12,7 +12,10 @@ source venv_demand/bin/activate #Activate
 ```bash
 pip install -r requirements.txt
 ```
-
+Run the setup script to configure the environment variables:
+```bash
+export PYTHONPATH=$(pwd):$PYTHONPATH
+```
 # Data source
 Favorita stores located in Ecuador - https://www.kaggle.com/competitions/store-sales-time-series-forecasting/data
 
