@@ -19,6 +19,12 @@ from utils import (
     build_static_node_features,
     build_product_graph_adjacency,
 )
+from plot_hybrid_results import (
+    load_forecasts as load_hybrid_forecasts,
+    plot_store_family as plot_hybrid_store_family,
+    plot_family_all_stores as plot_hybrid_family_all_stores,
+    plot_family_aggregate as plot_hybrid_family_aggregate,
+)
 
 
 def set_seed(seed: int = 42):
@@ -388,14 +394,52 @@ def main():
                             "y_pred": float(preds_med[i, d_idx]),
                         }
                     )
+                # Append encoder history (past sales) before forecast horizon
+                # Use the 'sales' feature from encoder inputs (assumed raw units)
+                sales_idx = enc_vars.index("sales")
+                past_dates = meta["past_dates"]
+                for d_idx, date in enumerate(past_dates):
+                    rows.append(
+                        {
+                            "date": pd.to_datetime(date),
+                            "store_nbr": store_nbr,
+                            "family": family,
+                            "y_past": float(past[i, d_idx, sales_idx].cpu()),
+                        }
+                    )
     if rows:
         out_csv = os.path.join(
             "HYBRID_GNN_TFT", "checkpoints", "gnn_tft_test_forecasts.csv"
         )
-        pd.DataFrame(rows).sort_values(["family", "store_nbr", "date"]).to_csv(
-            out_csv, index=False
-        )
+        df_out = pd.DataFrame(rows).sort_values(["family", "store_nbr", "date"])
+        # Enforce TFT-like schema and column order
+        for col in ["y_true", "y_pred", "y_past"]:
+            if col not in df_out.columns:
+                df_out[col] = np.nan
+        df_out = df_out[["date", "store_nbr", "family", "y_true", "y_pred", "y_past"]]
+        df_out.to_csv(out_csv, index=False)
         print(f"Saved hybrid test forecasts -> {out_csv}")
+        # Quick summary counts akin to TFT workflow
+        c_past = int(df_out["y_past"].notna().sum())
+        c_pred = int(df_out["y_pred"].notna().sum())
+        c_true = int(df_out["y_true"].notna().sum())
+        print(
+            f"Rows -> y_past: {c_past} | y_pred: {c_pred} | y_true: {c_true}"
+        )
+        # Optional: generate a couple of example plots like TFT
+        try:
+            forecasts_df = load_hybrid_forecasts(out_csv)
+            # Pick a frequent (family, store) for demo
+            grp_counts = (
+                forecasts_df.groupby(["family", "store_nbr"]).size().sort_values(ascending=False)
+            )
+            if not grp_counts.empty:
+                fam, store = grp_counts.index[0]
+                plot_hybrid_store_family(forecasts_df, int(store), str(fam))
+                plot_hybrid_family_all_stores(forecasts_df, str(fam))
+                plot_hybrid_family_aggregate(forecasts_df, str(fam))
+        except Exception as e:
+            print(f"Plotting skipped: {e}")
 
 
 if __name__ == "__main__":
