@@ -12,7 +12,12 @@ def load_forecasts(path: str = None) -> pd.DataFrame:
         raise FileNotFoundError(
             f"Hybrid forecasts CSV not found: {path}. Run HYBRID_GNN_TFT/train_tft.py first."
         )
-    return pd.read_csv(path, parse_dates=["date"])
+    df = pd.read_csv(path, parse_dates=["date"])
+    expected = ["date", "store_nbr", "family", "y_true", "y_pred", "y_past"]
+    missing = [c for c in expected if c not in df.columns]
+    if missing:
+        raise ValueError(f"CSV missing expected columns: {missing}")
+    return df[expected]
 
 
 def verify_export_schema(df: pd.DataFrame):
@@ -36,7 +41,7 @@ def plot_store_family(
     store_nbr: int,
     family: str,
     save_dir: str = None,
-    show_onpromotion: bool = True,
+    show_onpromotion: bool = False,
 ):
     sub = df[(df.store_nbr == store_nbr) & (df.family == family)].sort_values("date")
     if sub.empty:
@@ -64,13 +69,7 @@ def plot_store_family(
         plt.plot(fut_seg.date, fut_seg.y_pred, label="Forecast (pred)", color="tab:blue", lw=2)
         if "y_true" in fut_seg.columns:
             plt.plot(fut_seg.date, fut_seg.y_true, label="Actual (future)", color="tab:green", lw=2)
-        # Optional: overlay onpromotion as shaded bars if available
-        if show_onpromotion and "onpromotion" in fut_seg.columns:
-            # Normalize for alpha shading between 0-1
-            promo = fut_seg["onpromotion"].astype(float)
-            promo_norm = (promo - promo.min()) / (promo.max() - promo.min() + 1e-8)
-            for d, a in zip(fut_seg.date, promo_norm):
-                plt.axvspan(d, d, color="tab:orange", alpha=float(a) * 0.2)
+        # Optional covariate overlays are disabled by default to match TFT
 
     title = f"Hybrid TFT: store={store_nbr}, family={family}"
     plt.title(title)
@@ -145,7 +144,7 @@ def plot_family_all_stores(
     family: str,
     max_cols: int = 4,
     save_dir: str = None,
-    show_onpromotion: bool = True,
+    show_onpromotion: bool = False,
 ):
     sub = df[df.family == family]
     has_pred = sub.dropna(subset=["y_pred"]) if "y_pred" in sub.columns else pd.DataFrame()
@@ -171,11 +170,7 @@ def plot_family_all_stores(
         ssub_pred = ssub.dropna(subset=["y_pred"]) if "y_pred" in ssub.columns else pd.DataFrame()
         if not ssub_pred.empty:
             ax.plot(ssub_pred.date, ssub_pred.y_pred, label="Forecast (pred)", color="tab:blue", lw=2)
-            if show_onpromotion and "onpromotion" in ssub_pred.columns:
-                promo = ssub_pred["onpromotion"].astype(float)
-                promo_norm = (promo - promo.min()) / (promo.max() - promo.min() + 1e-8)
-                for d, a in zip(ssub_pred.date, promo_norm):
-                    ax.axvspan(d, d, color="tab:orange", alpha=float(a) * 0.2)
+            # Optional covariate overlays disabled by default
         else:
             ax.text(0.5, 0.85, "No predictions", transform=ax.transAxes, ha="center", va="center", fontsize=9, color="#666")
         ssub_true = ssub.dropna(subset=["y_true"]) if "y_true" in ssub.columns else pd.DataFrame()
