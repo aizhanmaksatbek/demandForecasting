@@ -9,7 +9,9 @@ class NodeIndexer:
 
     def __init__(self, keys: List[Tuple[int, str]]):
         uniq = sorted(set(keys))
-        self.key2id: Dict[Tuple[int, str], int] = {k: i for i, k in enumerate(uniq)}
+        self.key2id: Dict[Tuple[int, str], int] = {
+            k: i for i, k in enumerate(uniq)
+            }
         self.id2key: List[Tuple[int, str]] = uniq
 
     def __len__(self) -> int:
@@ -33,7 +35,9 @@ def build_static_node_features(
     static_cols: List[str],
     static_onehot_maps: Dict[str, Dict],
 ) -> torch.Tensor:
-    """Create node static feature matrix X_nodes [N, S] from one-hots used by TFT."""
+    """
+    Create node static feature matrix X_nodes [N, S]
+    from one-hots used by TFT."""
     rows = []
     for key in indexer.id2key:
         s, f = key
@@ -55,15 +59,20 @@ def build_product_graph_adjacency(
     top_k: int = 10,
     min_corr: float = 0.2,
 ) -> torch.Tensor:
-    """Build adjacency based on Pearson correlation of sales over the train window.
+    """Build adjacency based on Pearson correlation of sales over
+    the train window.
 
-    - For each node (store, family), compute its daily sales series up to train_end
+    - For each node (store, family), compute its daily sales series
+    up to train_end
     - Compute correlation matrix across nodes
     - For each node, keep top_k neighbors with corr >= min_corr (symmetrized)
     """
     # Build panel pivot [date x node]
     df_train = df[df["date"] <= train_end].copy()
-    df_train["node"] = list(zip(df_train.store_nbr.astype(int), df_train.family))
+    df_train["node"] = list(
+        zip(df_train.store_nbr.astype(int),
+            df_train.family)
+            )
     pivot = df_train.pivot_table(index="date", columns="node", values="sales")
     # Align columns with indexer order
     cols = indexer.id2key
