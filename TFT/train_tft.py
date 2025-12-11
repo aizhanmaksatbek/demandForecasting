@@ -188,8 +188,8 @@ def main():
             y = batch["target"].to(device)             # [B, L_dec]
 
             optimizer.zero_grad()
-            out = model(past, future, static, return_attention=False).to(device)
-            loss = criterion(out["prediction"], y)
+            out = model(past, future, static, return_attention=False)
+            loss = criterion(out["prediction"].to(device), y)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
@@ -206,8 +206,8 @@ def main():
                 future = batch["future_inputs"].to(device)
                 static = batch["static_inputs"].to(device)
                 y = batch["target"].to(device)
-                out = model(past, future, static, return_attention=False).to(device)
-                loss = criterion(out["prediction"], y)
+                out = model(past, future, static, return_attention=False)
+                loss = criterion(out["prediction"].to(device), y)
                 val_loss += loss.item() * past.size(0)
         val_loss /= max(len(val_ds), 1)
         print(
@@ -244,9 +244,9 @@ def main():
                 future = batch["future_inputs"].to(device)
                 static = batch["static_inputs"].to(device)
                 y = batch["target"].to(device)
-                out = model(past, future, static, return_attention=False).to(device)
+                out = model(past, future, static, return_attention=False)
                 total_loss += (
-                    criterion(out["prediction"], y).item() * past.size(0)
+                    criterion(out["prediction"].to(device), y).item() * past.size(0)
                 )
                 # take median quantile as point forecast
                 # number of quantiles (unused variable)
