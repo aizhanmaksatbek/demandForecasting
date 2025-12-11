@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from graph_dataset import GraphDemandDataset
 from architecture.stgnn import STGNN, QuantileLoss
+from torch.utils.tensorboard import SummaryWriter
 
 
 def set_seed(seed: int = 42):
@@ -40,11 +41,23 @@ def main():
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--quantiles", type=str, default="0.1,0.5,0.9")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--tensorboard", action="store_true", help="Enable TensorBoard logging")
+    parser.add_argument(
+        "--log-dir",
+        type=str,
+        default=os.path.join("GNN", "logs"),
+        help="Directory to store TensorBoard logs",
+    )
     args = parser.parse_args()
 
     set_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    os.makedirs("checkpoints", exist_ok=True)
+    os.makedirs(os.path.join("GNN", "checkpoints"), exist_ok=True)
+    if args.tensorboard:
+        os.makedirs(args.log_dir, exist_ok=True)
+        writer = SummaryWriter(log_dir=args.log_dir)
+    else:
+        writer = None
 
     panel_csv = os.path.join("GNN", "data", "panel.csv")
     node_index_csv = os.path.join("GNN", "data", "node_index.csv")
@@ -158,6 +171,9 @@ def main():
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
         train_loss /= max(len(train_ds), 1)
 
+        if writer is not None:
+            writer.add_scalar("loss/train", train_loss, epoch)
+
         # Validation
         model.eval()
         val_loss = 0.0
@@ -172,6 +188,8 @@ def main():
         print(f"Epoch {epoch}: train_pinball={train_loss:.5f} \
               | val_pinball={val_loss:.5f}"
               )
+        if writer is not None:
+            writer.add_scalar("loss/val", val_loss, epoch)
 
         if val_loss < best_val:
             best_val = val_loss
@@ -182,6 +200,10 @@ def main():
                 best_path,
             )
             print(f"Saved best model to {best_path}")
+
+    if writer is not None:
+        writer.flush()
+        writer.close()
 
     # Load best and evaluate
     if os.path.exists(best_path):
