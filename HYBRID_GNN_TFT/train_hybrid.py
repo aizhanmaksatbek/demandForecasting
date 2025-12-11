@@ -7,23 +7,13 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-
-# Import TFT dataset and architecture
 from TFT.tft_dataset import TFTWindowDataset, tft_collate
 from TFT.architecture.tft import QuantileLoss
-
-# Make local package imports work when running as a script
 from hybrid_model import HybridGNNTFT, normalize_adjacency
 from utils import (
     build_node_indexer,
     build_static_node_features,
     build_product_graph_adjacency,
-)
-from plot_hybrid_results import (
-    load_forecasts as load_hybrid_forecasts,
-    plot_store_family as plot_hybrid_store_family,
-    plot_family_all_stores as plot_hybrid_family_all_stores,
-    plot_family_aggregate as plot_hybrid_family_aggregate,
 )
 
 
@@ -189,14 +179,17 @@ def main():
     )
 
     print(
-        f"Train samples: {len(train_ds)} | Val: {len(val_ds)} | Test: {len(test_ds)}"
-    )
+        f"Train samples: {len(train_ds)} \
+        | Val: {len(val_ds)} \
+        | Test: {len(test_ds)}"
+        )
 
     # Build graph indexer and tensors
     indexer = build_node_indexer(df[["store_nbr", "family"]].drop_duplicates())
     X_nodes = build_static_node_features(df, indexer, static_cols, static_maps)
     A = build_product_graph_adjacency(
-        df, indexer, train_end=train_end, top_k=args.top_k, min_corr=args.min_corr
+        df, indexer, train_end=train_end,
+        top_k=args.top_k, min_corr=args.min_corr
     )
     # Normalize adjacency once
     A = A.to(device)
@@ -223,10 +216,18 @@ def main():
     ).to(device)
 
     criterion = QuantileLoss(quantiles=quantiles)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-5)
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=args.lr,
+        weight_decay=1e-5
+        )
 
     best_val = float("inf")
-    best_path = os.path.join("HYBRID_GNN_TFT", "checkpoints", "gnn_tft_best.pt")
+    best_path = os.path.join(
+        "HYBRID_GNN_TFT",
+        "checkpoints",
+        "gnn_tft_best.pt"
+        )
 
     # Training loop
     for epoch in range(1, args.epochs + 1):
@@ -287,9 +288,11 @@ def main():
                     return_attention=False,
                 )
                 y = batch["target"].to(device)
-                val_loss += criterion(out["prediction"], y).item() * past.size(0)
+                val_loss += (criterion(out["prediction"], y)
+                             .item() * past.size(0))
         val_loss /= max(len(val_ds), 1)
-        print(f"Epoch {epoch}: train_loss={train_loss:.5f} val_loss={val_loss:.5f}")
+        print(f"Epoch {epoch}: train_loss={train_loss:.5f} \
+              val_loss={val_loss:.5f}")
         if val_loss < best_val:
             best_val = val_loss
             torch.save(
@@ -334,7 +337,8 @@ def main():
                 )
                 y = batch["target"].to(device)
                 total_loss += (
-                    QuantileLoss(quantiles=quantiles)(out["prediction"], y).item()
+                    QuantileLoss(quantiles=quantiles)
+                    (out["prediction"], y).item()
                     * past.size(0)
                 )
                 median_idx = int(np.argmin([abs(q - 0.5) for q in quantiles]))
@@ -349,10 +353,14 @@ def main():
     val_pinball, val_wape, val_smape = eval_loader(val_loader)
     test_pinball, test_wape, test_smape = eval_loader(test_loader)
     print(
-        f"Validation  - Pinball: {val_pinball:.5f} | WAPE: {val_wape:.5f} | sMAPE: {val_smape:.5f}"
+        f"Validation  - Pinball: {val_pinball:.5f} \
+        | WAPE: {val_wape:.5f} \
+        | sMAPE: {val_smape:.5f}"
     )
     print(
-        f"Test        - Pinball: {test_pinball:.5f} | WAPE: {test_wape:.5f} | sMAPE: {test_smape:.5f}"
+        f"Test - Pinball: {test_pinball:.5f} \
+        | WAPE: {test_wape:.5f} \
+        | sMAPE: {test_smape:.5f}"
     )
 
     # Export test forecasts (median) for plotting
@@ -395,7 +403,7 @@ def main():
                         }
                     )
                 # Append encoder history (past sales) before forecast horizon
-                # Use the 'sales' feature from encoder inputs (assumed raw units)
+                # Use the 'sales' feature from encoder inputs
                 sales_idx = enc_vars.index("sales")
                 past_dates = meta["past_dates"]
                 for d_idx, date in enumerate(past_dates):
@@ -411,12 +419,15 @@ def main():
         out_csv = os.path.join(
             "HYBRID_GNN_TFT", "checkpoints", "gnn_tft_test_forecasts.csv"
         )
-        df_out = pd.DataFrame(rows).sort_values(["family", "store_nbr", "date"])
+        df_out = pd.DataFrame(rows).sort_values(
+            ["family", "store_nbr", "date"]
+            )
         # Enforce TFT-like schema and column order
         for col in ["y_true", "y_pred", "y_past"]:
             if col not in df_out.columns:
                 df_out[col] = np.nan
-        df_out = df_out[["date", "store_nbr", "family", "y_true", "y_pred", "y_past"]]
+        df_out = df_out[["date", "store_nbr", "family",
+                         "y_true", "y_pred", "y_past"]]
         df_out.to_csv(out_csv, index=False)
         print(f"Saved hybrid test forecasts -> {out_csv}")
         # Quick summary counts akin to TFT workflow
@@ -426,20 +437,6 @@ def main():
         print(
             f"Rows -> y_past: {c_past} | y_pred: {c_pred} | y_true: {c_true}"
         )
-        # Optional: generate a couple of example plots like TFT
-        try:
-            forecasts_df = load_hybrid_forecasts(out_csv)
-            # Pick a frequent (family, store) for demo
-            grp_counts = (
-                forecasts_df.groupby(["family", "store_nbr"]).size().sort_values(ascending=False)
-            )
-            if not grp_counts.empty:
-                fam, store = grp_counts.index[0]
-                plot_hybrid_store_family(forecasts_df, int(store), str(fam))
-                plot_hybrid_family_all_stores(forecasts_df, str(fam))
-                plot_hybrid_family_aggregate(forecasts_df, str(fam))
-        except Exception as e:
-            print(f"Plotting skipped: {e}")
 
 
 if __name__ == "__main__":
