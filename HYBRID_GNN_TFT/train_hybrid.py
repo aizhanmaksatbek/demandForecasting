@@ -10,6 +10,7 @@ from tqdm import tqdm
 from TFT.tft_dataset import TFTWindowDataset, tft_collate
 from TFT.architecture.tft import QuantileLoss
 from hybrid_model import HybridGNNTFT, normalize_adjacency
+from torch.utils.tensorboard import SummaryWriter
 from utils import (
     build_node_indexer,
     build_static_node_features,
@@ -54,11 +55,25 @@ def main():
     parser.add_argument("--min-corr", type=float, default=0.2)
     parser.add_argument("--gnn-hidden", type=int, default=64)
     parser.add_argument("--gnn-embed", type=int, default=32)
+    parser.add_argument("--tensorboard", action="store_true",
+                        help="Enable TensorBoard logging"
+                        )
+    parser.add_argument(
+        "--log-dir",
+        type=str,
+        default=os.path.join("HYBRID_GNN_TFT", "logs"),
+        help="Directory to store TensorBoard logs",
+    )
     args = parser.parse_args()
 
     set_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     os.makedirs(os.path.join("HYBRID_GNN_TFT", "checkpoints"), exist_ok=True)
+    if args.tensorboard:
+        os.makedirs(args.log_dir, exist_ok=True)
+        writer = SummaryWriter(log_dir=args.log_dir)
+    else:
+        writer = None
 
     # Load TFT panel
     panel_path = os.path.join("TFT", "data", "panel.csv")
@@ -256,13 +271,16 @@ def main():
                 return_attention=False,
             )
             y = batch["target"].to(device)
-            loss = criterion(out["prediction"], y)
+            loss = criterion(out["prediction"].to(device), y)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
             train_loss += loss.item() * past.size(0)
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
         train_loss /= max(len(train_ds), 1)
+
+        if writer is not None:
+            writer.add_scalar("loss/train", train_loss, epoch)
 
         # Validation
         model.eval()
@@ -288,11 +306,15 @@ def main():
                     return_attention=False,
                 )
                 y = batch["target"].to(device)
-                val_loss += (criterion(out["prediction"], y)
+                val_loss += (criterion(out["prediction"].to(device), y)
                              .item() * past.size(0))
         val_loss /= max(len(val_ds), 1)
         print(f"Epoch {epoch}: train_loss={train_loss:.5f} \
               val_loss={val_loss:.5f}")
+
+        if writer is not None:
+            writer.add_scalar("loss/val", val_loss, epoch)
+
         if val_loss < best_val:
             best_val = val_loss
             torch.save(
@@ -304,6 +326,10 @@ def main():
                 best_path,
             )
             print(f"Saved best model to {best_path}")
+
+    if writer is not None:
+        writer.flush()
+        writer.close()
 
     # Load best and evaluate
     if os.path.exists(best_path):
@@ -338,7 +364,7 @@ def main():
                 y = batch["target"].to(device)
                 total_loss += (
                     QuantileLoss(quantiles=quantiles)
-                    (out["prediction"], y).item()
+                    (out["prediction"].to(device), y).item()
                     * past.size(0)
                 )
                 median_idx = int(np.argmin([abs(q - 0.5) for q in quantiles]))
