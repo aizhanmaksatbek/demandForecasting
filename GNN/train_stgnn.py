@@ -32,7 +32,7 @@ def main():
     parser.add_argument("--enc-len", type=int, default=56)
     parser.add_argument("--horizon", type=int, default=28)
     parser.add_argument("--batch-size", type=int, default=32)
-    parser.add_argument("--epochs", type=int, default=0)
+    parser.add_argument("--epochs", type=int, default=200)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--hidden", type=int, default=64)
     parser.add_argument("--blocks", type=int, default=3)
@@ -150,7 +150,7 @@ def main():
             y = batch["y_fut"].to(device)   # [B, H, N]
             optimizer.zero_grad()
             yhat = model(x)                 # [B, H, N, Q]
-            loss = criterion(yhat, y)
+            loss = criterion(yhat.to(device), y)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
@@ -166,7 +166,7 @@ def main():
                 x = batch["x_hist"].to(device)
                 y = batch["y_fut"].to(device)
                 yhat = model(x)
-                loss = criterion(yhat, y)
+                loss = criterion(yhat.to(device), y)
                 val_loss += loss.item() * x.size(0)
         val_loss /= max(len(val_ds), 1)
         print(f"Epoch {epoch}: train_pinball={train_loss:.5f} \
@@ -197,7 +197,7 @@ def main():
                 x = batch["x_hist"].to(device)
                 y = batch["y_fut"].to(device)
                 yhat = model(x)  # [B,H,N,Q]
-                total_loss += criterion(yhat, y).item() * x.size(0)
+                total_loss += criterion(yhat.to(device), y).item() * x.size(0)
                 # median quantile
                 median_idx = int(np.argmin([abs(q - 0.5) for q in quantiles]))
                 yhat_med = yhat[..., median_idx]  # [B,H,N]
