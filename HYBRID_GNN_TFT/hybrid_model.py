@@ -1,13 +1,14 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-# Ensure TFT architecture is importable
 from TFT.architecture.tft import TemporalFusionTransformer
 
 
 def normalize_adjacency(A: torch.Tensor) -> torch.Tensor:
-    """Compute \hat{A} = D^{-1/2} (A + I) D^{-1/2} for dense A."""
+    """Normalizes the adjacency matrix into the symmetric normalized form.
+    Compute {A} = D^{-1/2} (A + I)
+    D^{-1/2} for dense A
+    """
     N = A.size(0)
     A_hat = A + torch.eye(N, device=A.device, dtype=A.dtype)
     deg = A_hat.sum(dim=1)
@@ -27,7 +28,9 @@ class GCNLayer(nn.Module):
 
 
 class RelationalEncoder(nn.Module):
-    def __init__(self, in_dim: int, hidden_dim: int, out_dim: int, dropout: float = 0.1):
+    def __init__(self, in_dim: int, hidden_dim: int,
+                 out_dim: int, dropout: float = 0.1
+                 ):
         super().__init__()
         self.gcn1 = GCNLayer(in_dim, hidden_dim)
         self.gcn2 = GCNLayer(hidden_dim, out_dim)
@@ -42,7 +45,9 @@ class RelationalEncoder(nn.Module):
 
 
 class HybridGNNTFT(nn.Module):
-    """Hybrid model: GNN generates node embeddings, concatenated to TFT static inputs."""
+    """Hybrid model combining a GNN and TFT.
+    GNN generates node embeddings to be concatenated to TFT static inputs.
+    """
 
     def __init__(
         self,
@@ -71,7 +76,6 @@ class HybridGNNTFT(nn.Module):
         )
         self.gnn_out_dim = gnn_out_dim
 
-        # Underlying TFT, with augmented static dimension (we'll concat at runtime)
         self.tft = TemporalFusionTransformer(
             static_input_dims=static_input_dims,
             past_input_dims=past_input_dims,
