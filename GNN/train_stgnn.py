@@ -41,7 +41,9 @@ def main():
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--quantiles", type=str, default="0.1,0.5,0.9")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--tensorboard", action="store_true", help="Enable TensorBoard logging")
+    parser.add_argument("--tensorboard", action="store_true",
+                        help="Enable TensorBoard logging"
+                        )
     parser.add_argument(
         "--log-dir",
         type=str,

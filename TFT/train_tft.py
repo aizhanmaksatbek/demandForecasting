@@ -64,7 +64,9 @@ def main():
     parser.add_argument("--quantiles", type=str, default="0.1,0.5,0.9")
     parser.add_argument("--stride", type=int, default=1)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--tensorboard", action="store_true", help="Enable TensorBoard logging")
+    parser.add_argument("--tensorboard", action="store_true",
+                        help="Enable TensorBoard logging"
+                        )
     parser.add_argument(
         "--log-dir",
         type=str,
@@ -269,7 +271,8 @@ def main():
                 y = batch["target"].to(device)
                 out = model(past, future, static, return_attention=False)
                 total_loss += (
-                    criterion(out["prediction"].to(device), y).item() * past.size(0)
+                    criterion(out["prediction"].to(device), y)
+                    .item() * past.size(0)
                 )
                 # take median quantile as point forecast
                 # number of quantiles (unused variable)
