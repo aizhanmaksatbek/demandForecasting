@@ -177,12 +177,14 @@ class STGNN(nn.Module):
 class QuantileLoss(nn.Module):
     def __init__(self, quantiles: List[float]):
         super().__init__()
-        self.register_buffer("q", torch.tensor(quantiles, dtype=torch.float32))
+        self.register_buffer(
+            "quantiles", torch.tensor(quantiles, dtype=torch.float32)
+            )
 
     def forward(self, y_pred: torch.Tensor,
                 y_true: torch.Tensor) -> torch.Tensor:
-        # y_pred: [B, H, N, Q], y_true: [B, H, N]
-        q = self.q.view(1, 1, 1, -1)
-        e = y_true.unsqueeze(-1) - y_pred
+        device = y_pred.device
+        q = self.quantiles.to(device).view(1, 1, 1, -1)
+        e = (y_true.unsqueeze(-1) - y_pred)
         loss = torch.maximum(q * e, (q - 1) * e).mean()
         return loss
