@@ -52,7 +52,7 @@ def main():
     parser.add_argument("--enc-len", type=int, default=56)
     parser.add_argument("--dec-len", type=int, default=28)
     parser.add_argument("--batch-size", type=int, default=256)
-    parser.add_argument("--epochs", type=int, default=0)
+    parser.add_argument("--epochs", type=int, default=200)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--hidden-dim", type=int, default=128)
     parser.add_argument("--d-model", type=int, default=64)
@@ -188,7 +188,7 @@ def main():
             y = batch["target"].to(device)             # [B, L_dec]
 
             optimizer.zero_grad()
-            out = model(past, future, static, return_attention=False)
+            out = model(past, future, static, return_attention=False).to(device)
             loss = criterion(out["prediction"], y)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -206,7 +206,7 @@ def main():
                 future = batch["future_inputs"].to(device)
                 static = batch["static_inputs"].to(device)
                 y = batch["target"].to(device)
-                out = model(past, future, static, return_attention=False)
+                out = model(past, future, static, return_attention=False).to(device)
                 loss = criterion(out["prediction"], y)
                 val_loss += loss.item() * past.size(0)
         val_loss /= max(len(val_ds), 1)
@@ -244,7 +244,7 @@ def main():
                 future = batch["future_inputs"].to(device)
                 static = batch["static_inputs"].to(device)
                 y = batch["target"].to(device)
-                out = model(past, future, static, return_attention=False)
+                out = model(past, future, static, return_attention=False).to(device)
                 total_loss += (
                     criterion(out["prediction"], y).item() * past.size(0)
                 )

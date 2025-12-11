@@ -339,7 +339,8 @@ class QuantileLoss(nn.Module):
     def forward(self,
                 y_pred: torch.Tensor,
                 y_true: torch.Tensor) -> torch.Tensor:
-        q = self.quantiles.view(1, 1, -1)  # [1,1,Q]
-        e = y_true.unsqueeze(-1) - y_pred  # [B,T,Q]
+        device = y_pred.device
+        q = self.quantiles.to(device).view(1, 1, -1)  # [1,1,Q]
+        e = y_true.unsqueeze(-1) - y_pred  # [B,T,Q] already on device
         loss = torch.maximum(q * e, (q - 1) * e)
         return loss.mean()

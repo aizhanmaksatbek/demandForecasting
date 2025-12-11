@@ -99,9 +99,16 @@ class HybridGNNTFT(nn.Module):
         X_nodes: torch.Tensor,
         return_attention: bool = False,
     ):
+        # Ensure all inputs are on the same device and types are correct
+        dev = static_inputs.device
+        A_norm = A_norm.to(dev)
+        X_nodes = X_nodes.to(dev)
+        node_ids = node_ids.to(dev).long()
+        past_inputs = past_inputs.to(dev)
+        future_inputs = future_inputs.to(dev)
         # Compute node embeddings once per forward and select batch rows
         Z = self.rel_encoder(X_nodes, A_norm)  # [N_nodes, gnn_out_dim]
-        z_batch = Z[node_ids]  # [B, gnn_out_dim]
+        z_batch = Z.index_select(0, node_ids)  # [B, gnn_out_dim]
         # Concatenate with static inputs along feature dim
         static_aug = torch.cat([static_inputs, z_batch], dim=1)
         return self.tft(
