@@ -1,4 +1,5 @@
 import os
+import time
 import numpy as np
 import pandas as pd
 import torch
@@ -32,6 +33,7 @@ def perm_importance(model, loader, device, feature_space: str, var_idx: int,
     feature_space: 'encoder' | 'decoder' | 'static'
     var_idx: index of variable within that space
     """
+    start = time.time()
     base = wape_loader(model, loader, device, quantiles)
     deltas = []
     for _ in range(repeats):
@@ -70,7 +72,8 @@ def perm_importance(model, loader, device, feature_space: str, var_idx: int,
                 num += torch.abs(yhat - y).sum().item()
                 den += torch.abs(y).sum().item() + 1e-8
         deltas.append(num / den)
-    return np.mean(deltas) - base
+    elapsed = time.time() - start
+    return np.mean(deltas) - base, elapsed
 
 
 def build_test_loader(enc_len=56, dec_len=28, stride=1):
@@ -165,27 +168,34 @@ def run_permutation_suite(device: torch.device | None = None):
         checkpoint_path=os.path.join("TFT", "checkpoints", "tft_best.pt")
         )
 
+    print("[XAI] Starting permutation importance...")
     # Compute importance for decoder variables (commonly actionable)
     results = {}
     for i, name in enumerate(dec_vars):
-        delta = perm_importance(
+        print(f"[XAI] Decoder var {i+1}/{len(dec_vars)}: {name}...")
+        delta, secs = perm_importance(
             model, test_loader, device, "decoder", i, repeats=3
             )
         results[f"decoder::{name}"] = float(delta)
+        print(f"[XAI] Done {name}: ΔWAPE={delta:.5f} in {secs:.1f}s")
 
     # Encoder variables
     for i, name in enumerate(enc_vars):
-        delta = perm_importance(
+        print(f"[XAI] Encoder var {i+1}/{len(enc_vars)}: {name}...")
+        delta, secs = perm_importance(
             model, test_loader, device, "encoder", i, repeats=3
             )
         results[f"encoder::{name}"] = float(delta)
+        print(f"[XAI] Done {name}: ΔWAPE={delta:.5f} in {secs:.1f}s")
 
     # Static variables (permutation across batch)
     for i, name in enumerate(static_cols):
-        delta = perm_importance(
+        print(f"[XAI] Static var {i+1}/{len(static_cols)}: {name}...")
+        delta, secs = perm_importance(
             model, test_loader, device, "static", i, repeats=3
             )
         results[f"static::{name}"] = float(delta)
+        print(f"[XAI] Done {name}: ΔWAPE={delta:.5f} in {secs:.1f}s")
 
     # Save JSON-like CSV
     rows = [
@@ -196,8 +206,11 @@ def run_permutation_suite(device: torch.device | None = None):
     df.sort_values(["space", "wape_delta"], ascending=[True, False]).to_csv(
         os.path.join(out_dir, "xai_permutation_importance.csv"), index=False
     )
-    print("Saved permutation importance ->",
-          os.path.join(out_dir, "xai_permutation_importance.csv")
+    print("[XAI] Saved permutation importance ->",
+          os.path.join(out_dir, "xai_permutation_importance.csv"))
+    print("[XAI] Completed permutation importance for",
+          f"{len(enc_vars)} encoder, {len(dec_vars)} decoder,",
+          f"{len(static_cols)} static variables."
           )
 
 
