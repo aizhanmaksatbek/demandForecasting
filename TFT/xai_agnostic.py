@@ -66,6 +66,7 @@ def perm_importance(model, loader, device, feature_space: str, var_idx: int,
 
                 out = model(past, future, static, return_attention=False)
                 yhat = out["prediction"][..., median_idx]
+                yhat = yhat.to(device)
                 num += torch.abs(yhat - y).sum().item()
                 den += torch.abs(y).sum().item() + 1e-8
         deltas.append(num / den)
@@ -147,13 +148,15 @@ def build_model(enc_vars, dec_vars, static_cols, static_dims,
     return model, device
 
 
-def run_permutation_suite():
+def run_permutation_suite(device: torch.device | None = None):
     out_dir = os.path.join("TFT", "checkpoints")
     os.makedirs(out_dir, exist_ok=True)
 
     test_loader, enc_vars, dec_vars, static_cols, static_dims = (
         build_test_loader()
         )
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model, device = build_model(
         enc_vars,
         dec_vars,
@@ -199,4 +202,5 @@ def run_permutation_suite():
 
 
 if __name__ == "__main__":
-    run_permutation_suite()
+    dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    run_permutation_suite(device=dev)

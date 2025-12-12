@@ -96,7 +96,8 @@ def run_tft_intrinsic_once(enc_len=56, dec_len=28, stride=1,
                            checkpoint_path=os.path.join(
                                "TFT", "checkpoints", "tft_best.pt"
                                ),
-                           out_dir=os.path.join("TFT", "checkpoints")):
+                           out_dir=os.path.join("TFT", "checkpoints"),
+                           device: torch.device | None = None):
     """Load panel, model + checkpoint, take one val batch,
     and dump intrinsic XAI arrays.
 
@@ -158,7 +159,8 @@ def run_tft_intrinsic_once(enc_len=56, dec_len=28, stride=1,
         dropout=dropout,
         num_quantiles=3,
     )
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
     # Load checkpoint if present
@@ -194,7 +196,9 @@ def run_tft_intrinsic_once(enc_len=56, dec_len=28, stride=1,
 
 
 if __name__ == "__main__":
-    shapes = run_tft_intrinsic_once()
+    # Prefer GPU when available; allow override via environment
+    dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    shapes = run_tft_intrinsic_once(device=dev)
     print("Saved TFT XAI arrays. Shapes:", shapes)
     # Plot attention heatmap if available
     attn_path = os.path.join("TFT", "checkpoints", "xai_attn.npy")
