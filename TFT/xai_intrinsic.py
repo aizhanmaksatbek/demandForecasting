@@ -26,9 +26,12 @@ def extract_tft_intrinsic(model, batch, device=None):
     # Safely pick keys if present
     attn = out.get("attn_weights")  # [B, L_dec, L_enc]
     # TFT implementation provides variable selection weights under these keys
-    vsn_enc = out.get("encoder_variable_importance")    # [B, L_enc, V_enc] or None
-    vsn_dec = out.get("decoder_variable_importance")    # [B, L_dec, V_dec] or None
-    vsn_static = out.get("static_variable_importance")  # [B, V_static] or None
+    # [B, L_enc, V_enc] or None
+    vsn_enc = out.get("encoder_variable_importance")
+    # [B, L_dec, V_dec] or None
+    vsn_dec = out.get("decoder_variable_importance")
+    # [B, V_static] or None
+    vsn_static = out.get("static_variable_importance")
     return {
         "attn_weights": attn,
         "vsn_enc": vsn_enc,
@@ -37,11 +40,18 @@ def extract_tft_intrinsic(model, batch, device=None):
     }
 
 
-def summarize_vsn(vsn_enc: torch.Tensor, vsn_dec: torch.Tensor, vsn_static: torch.Tensor):
+def summarize_vsn(
+        vsn_enc: torch.Tensor,
+        vsn_dec: torch.Tensor,
+        vsn_static: torch.Tensor
+        ):
     """Compute mean importance across batch/time for encoder/decoder/static."""
-    enc_imp = vsn_enc.mean(dim=(0, 1)).detach().cpu().numpy() if vsn_enc is not None else None
-    dec_imp = vsn_dec.mean(dim=(0, 1)).detach().cpu().numpy() if vsn_dec is not None else None
-    stat_imp = vsn_static.mean(dim=0).detach().cpu().numpy() if vsn_static is not None else None
+    enc_imp = (vsn_enc.mean(dim=(0, 1)).detach().cpu().numpy()
+               if vsn_enc is not None else None)
+    dec_imp = (vsn_dec.mean(dim=(0, 1)).detach().cpu().numpy()
+               if vsn_dec is not None else None)
+    stat_imp = (vsn_static.mean(dim=0).detach().cpu().numpy()
+                if vsn_static is not None else None)
     return enc_imp, dec_imp, stat_imp
 
 
@@ -49,7 +59,8 @@ def summarize_attention(attn_weights: torch.Tensor):
     """Average decoder attention over batch to get [L_dec, L_enc]."""
     if attn_weights is None:
         return None
-    # Handle potential extra head/channel dim: [B, L_dec, L_enc] or [B, L_dec, L_enc, K]
+    # Handle potential extra head/channel dim: [B, L_dec, L_enc]
+    # or [B, L_dec, L_enc, K]
     aw = attn_weights
     if aw.ndim == 4:
         # average over batch and head/channel
@@ -79,19 +90,24 @@ def _build_onehot_maps(df: pd.DataFrame, cols):
     return maps
 
 
-def run_tft_intrinsic_once(enc_len=56, dec_len=28, stride=1, d_model=64, hidden_dim=128,
+def run_tft_intrinsic_once(enc_len=56, dec_len=28, stride=1,
+                           d_model=64, hidden_dim=128,
                            heads=4, lstm_hidden=64, lstm_layers=1, dropout=0.1,
-                           checkpoint_path=os.path.join("TFT", "checkpoints", "tft_best.pt"),
+                           checkpoint_path=os.path.join(
+                               "TFT", "checkpoints", "tft_best.pt"
+                               ),
                            out_dir=os.path.join("TFT", "checkpoints")):
-    """Load panel, model + checkpoint, take one val batch, and dump intrinsic XAI arrays.
+    """Load panel, model + checkpoint, take one val batch,
+    and dump intrinsic XAI arrays.
 
-    Saves: xai_attn.npy, xai_vsn_enc.npy, xai_vsn_dec.npy, xai_vsn_static.npy under out_dir.
+    Saves: xai_attn.npy, xai_vsn_enc.npy, xai_vsn_dec.npy,
+    xai_vsn_static.npy under out_dir.
     """
     os.makedirs(out_dir, exist_ok=True)
 
     # Load panel
     panel_path = os.path.join("TFT", "data", "panel.csv")
-    assert os.path.exists(panel_path), "Missing TFT/data/panel.csv. Run preprocessing first."
+    assert os.path.exists(panel_path), "Run data preprocessing first."
     df = pd.read_csv(panel_path, parse_dates=["date"])
 
     enc_vars = [
@@ -117,12 +133,16 @@ def run_tft_intrinsic_once(enc_len=56, dec_len=28, stride=1, d_model=64, hidden_
 
     test_ds = TFTWindowDataset(
         df, enc_len, dec_len, enc_vars, dec_vars, static_cols,
-        split_bounds, split="test", stride=stride, static_onehot_maps=static_maps,
+        split_bounds, split="test", stride=stride,
+        static_onehot_maps=static_maps,
     )
-    test_loader = DataLoader(test_ds, batch_size=64, shuffle=False,
-                            num_workers=0, pin_memory=True, collate_fn=tft_collate)
+    test_loader = DataLoader(test_ds, batch_size=64,
+                             shuffle=False, num_workers=0,
+                             pin_memory=True, collate_fn=tft_collate
+                             )
 
-    # Model definition must match training config for shapes; we only need forward for XAI
+    # Model definition must match training config for shapes;
+    # we only need forward for XAI
     past_input_dims = [1] * len(enc_vars)
     future_input_dims = [1] * len(dec_vars)
     static_input_dims = [len(static_maps[c]) for c in static_cols]
@@ -149,8 +169,12 @@ def run_tft_intrinsic_once(enc_len=56, dec_len=28, stride=1, d_model=64, hidden_
     # One batch
     batch = next(iter(test_loader))
     intr = extract_tft_intrinsic(model, batch, device=device)
-    enc_imp, dec_imp, stat_imp = summarize_vsn(intr["vsn_enc"], intr["vsn_dec"], intr["vsn_static"]) 
-    attn = summarize_attention(intr["attn_weights"]) 
+    enc_imp, dec_imp, stat_imp = summarize_vsn(
+        intr["vsn_enc"],
+        intr["vsn_dec"],
+        intr["vsn_static"]
+        )
+    attn = summarize_attention(intr["attn_weights"])
 
     # Save arrays if available
     if attn is not None:
