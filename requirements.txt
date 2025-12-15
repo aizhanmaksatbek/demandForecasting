@@ -12,3 +12,4 @@ tqdm
 pyarrow
 matplotlib
 torch_geometric
+tensorboard

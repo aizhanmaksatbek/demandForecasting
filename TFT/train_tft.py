@@ -11,12 +11,77 @@ from architecture.tft import TemporalFusionTransformer, QuantileLoss
 from tft_dataset import TFTWindowDataset, tft_collate
 from utils.utils import set_seed, build_onehot_maps
 from utils.utils import calc_wape, calc_smape, calc_mae
-from config.settings import enc_vars, dec_vars, static_cols
-from utils.utils import TensorboardConfig
+from config.settings import enc_vars, dec_vars, static_cols, reals_to_scale
+from utils.utils import TensorboardConfig, get_date_splits
 
 # Add src to path
 CUR_DIR = os.path.dirname(__file__)
 sys.path.append(os.path.join(CUR_DIR, ".."))
+
+
+def get_data_split(dec_len, enc_len, batch_size, stride):
+    # Load data
+    panel_path = os.path.join("TFT", "data", "panel.csv")
+    assert os.path.exists(panel_path), (
+        "Run data preprocessing first: "
+        "python src/data/preprocess_favorita.py"
+    )
+    df = pd.read_csv(panel_path, parse_dates=["date"])
+
+    # Scale continuous features (fit on train period only)
+    train_end, val_end, test_end = get_date_splits(df, dec_len)
+
+    scaler = StandardScaler()
+    train_mask = df["date"] <= train_end
+    df.loc[train_mask, reals_to_scale] = scaler.fit_transform(
+        df.loc[train_mask, reals_to_scale]
+    )
+    df.loc[~train_mask, reals_to_scale] = scaler.transform(
+        df.loc[~train_mask, reals_to_scale]
+    )
+
+    # One-hot maps for static features
+    static_maps = build_onehot_maps(df, static_cols)
+    static_dims = [len(static_maps[c]) for c in static_cols]
+
+    # Dataset and loaders
+    split_bounds = (train_end, val_end, test_end)
+    train_ds = TFTWindowDataset(
+        df, enc_len, dec_len, enc_vars, dec_vars, static_cols,
+        split_bounds, split="train", stride=stride,
+        static_onehot_maps=static_maps,
+    )
+    val_ds = TFTWindowDataset(
+        df, enc_len, dec_len, enc_vars, dec_vars, static_cols,
+        split_bounds, split="val", stride=stride,
+        static_onehot_maps=static_maps,
+    )
+    test_ds = TFTWindowDataset(
+        df, enc_len, dec_len, enc_vars, dec_vars, static_cols,
+        split_bounds, split="test", stride=stride,
+        static_onehot_maps=static_maps,
+    )
+
+    train_loader = DataLoader(
+        train_ds, batch_size=batch_size, shuffle=True,
+        num_workers=4, pin_memory=True, collate_fn=tft_collate,
+    )
+    val_loader = DataLoader(
+        val_ds, batch_size=batch_size, shuffle=False,
+        num_workers=4, pin_memory=True, collate_fn=tft_collate,
+    )
+    test_loader = DataLoader(
+        test_ds, batch_size=batch_size, shuffle=False,
+        num_workers=4, pin_memory=True, collate_fn=tft_collate,
+    )
+    print(
+        f"Train samples: {len(train_ds)} | "
+        f"Val: {len(val_ds)} | Test: {len(test_ds)}"
+    )
+    return (train_loader, val_loader, test_loader,
+            static_dims,
+            len(train_ds), len(val_ds), len(test_ds)
+            )
 
 
 def main():
@@ -50,72 +115,20 @@ def main():
         store_flag=args.tensorboard, log_dir=args.log_dir
     )
 
-    # Load panel
-    panel_path = os.path.join("TFT", "data", "panel.csv")
-    assert os.path.exists(panel_path), (
-        "Run data preprocessing first: "
-        "python src/data/preprocess_favorita.py"
-    )
-    df = pd.read_csv(panel_path, parse_dates=["date"])
-
-    # Scale continuous features (fit on train period only)
-    # Determine split dates
-    max_date = df["date"].max()
-    test_days = pd.Timedelta(days=args.dec_len)  # hold-out horizon for test
-    val_days = pd.Timedelta(days=args.dec_len)   # validation horizon
-    test_end = max_date
-    val_end = test_end - test_days
-    train_end = val_end - val_days
-
-    reals_to_scale = ["transactions", "dcoilwtico"]
-    scaler = StandardScaler()
-    train_mask = df["date"] <= train_end
-    df.loc[train_mask, reals_to_scale] = scaler.fit_transform(
-        df.loc[train_mask, reals_to_scale]
-    )
-    df.loc[~train_mask, reals_to_scale] = scaler.transform(
-        df.loc[~train_mask, reals_to_scale]
-    )
-
-    # One-hot maps for static features
-    static_maps = build_onehot_maps(df, static_cols)
-    static_dims = [len(static_maps[c]) for c in static_cols]
-
-    # Dataset and loaders
-    split_bounds = (train_end, val_end, test_end)
-    train_ds = TFTWindowDataset(
-        df, args.enc_len, args.dec_len, enc_vars, dec_vars, static_cols,
-        split_bounds, split="train", stride=args.stride,
-        static_onehot_maps=static_maps,
-    )
-    val_ds = TFTWindowDataset(
-        df, args.enc_len, args.dec_len, enc_vars, dec_vars, static_cols,
-        split_bounds, split="val", stride=args.stride,
-        static_onehot_maps=static_maps,
-    )
-    test_ds = TFTWindowDataset(
-        df, args.enc_len, args.dec_len, enc_vars, dec_vars, static_cols,
-        split_bounds, split="test", stride=args.stride,
-        static_onehot_maps=static_maps,
-    )
-
-    train_loader = DataLoader(
-        train_ds, batch_size=args.batch_size, shuffle=True,
-        num_workers=4, pin_memory=True, collate_fn=tft_collate,
-    )
-    val_loader = DataLoader(
-        val_ds, batch_size=args.batch_size, shuffle=False,
-        num_workers=4, pin_memory=True, collate_fn=tft_collate,
-    )
-    test_loader = DataLoader(
-        test_ds, batch_size=args.batch_size, shuffle=False,
-        num_workers=4, pin_memory=True, collate_fn=tft_collate,
-    )
-
-    print(
-        f"Train samples: {len(train_ds)} | "
-        f"Val: {len(val_ds)} | Test: {len(test_ds)}"
-    )
+    (
+        train_loader,
+        val_loader,
+        test_loader,
+        static_dims,
+        train_len,
+        val_len,
+        test_len,
+    ) = get_data_split(
+        args.dec_len,
+        args.enc_len,
+        args.batch_size,
+        args.stride
+        )
 
     # Model
     past_input_dims = [1] * len(enc_vars)
@@ -163,7 +176,7 @@ def main():
             optimizer.step()
             train_loss += loss.item() * past.size(0)
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
-        train_loss /= max(len(train_ds), 1)
+        train_loss /= max(train_len, 1)
 
         tensorboard_writer.write("train", train_loss, epoch)
 
@@ -179,7 +192,7 @@ def main():
                 out = model(past, future, static, return_attention=False)
                 loss = criterion(out["prediction"].to(device), y)
                 val_loss += loss.item() * past.size(0)
-        val_loss /= max(len(val_ds), 1)
+        val_loss /= max(val_len, 1)
         print(
             f"Epoch {epoch}: train_loss={train_loss:.5f} "
             f"val_loss={val_loss:.5f}"

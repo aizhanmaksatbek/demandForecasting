@@ -61,3 +61,15 @@ class TensorboardConfig:
         if self.writer:
             self.writer.flush()
             self.writer.close()
+
+
+def get_date_splits(df, dec_len):
+    "Determine split dates"
+    max_date = df["date"].max()
+    test_days = pd.Timedelta(days=dec_len)  # hold-out horizon for test
+    val_days = pd.Timedelta(days=dec_len)   # validation horizon
+    test_end = max_date
+    val_end = test_end - test_days
+    train_end = val_end - val_days
+
+    return train_end, val_end, test_end

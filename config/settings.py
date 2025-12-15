@@ -11,3 +11,5 @@ dec_vars = [
 ]
 # static features
 static_cols = ["store_nbr", "family", "state", "cluster"]
+
+reals_to_scale = ["transactions", "dcoilwtico"]
