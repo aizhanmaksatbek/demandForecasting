@@ -19,6 +19,19 @@ CUR_DIR = os.path.dirname(__file__)
 sys.path.append(os.path.join(CUR_DIR, ".."))
 
 
+def save_results_csv(rows):
+    if rows:
+        test_forecasts_df = (
+            pd.DataFrame(rows)
+            .sort_values(["family", "store_nbr", "date"])
+        )
+        out_csv = os.path.join(
+            "TFT", "checkpoints", "tft_test_forecasts.csv"
+        )
+        test_forecasts_df.to_csv(out_csv, index=False)
+        print(f"Saved test forecasts CSV -> {out_csv}")
+
+
 def get_data_split(dec_len, enc_len, batch_size, stride):
     # Load data
     panel_path = os.path.join("TFT", "data", "panel.csv")
@@ -227,16 +240,15 @@ def main():
             print(f"Saved TFT model to {best_path} at {epoch} epochs")
     tensorboard_writer.close()
 
-    # Load best and evaluate on test
+    # Load saved TFT model and evaluate on test set
     if os.path.exists(best_path):
         ckpt = torch.load(best_path, map_location=device)
         model.load_state_dict(ckpt["model_state"])
-        print(f"Loaded best model (val pinball: {best_val:.5f})")
+        print(f"Loaded stored TFT model for evaluation {best_path}")
     model.eval()
 
-    # Evaluation on validation and test with WAPE, sMAPE and pinball
+    # Evaluation on test set
     def eval_loader(data_loader):
-        median_idx = int(np.argmin([abs(q - 0.5) for q in quantiles]))
         rows = []
         total_loss = 0.0
         ys, preds = [], []
@@ -246,14 +258,10 @@ def main():
                 future = batch["future_inputs"].to(device)
                 static = batch["static_inputs"].to(device)
                 y = batch["target"].to(device)
+
                 out = model(past, future, static)
-                total_loss += (
-                    criterion(out["prediction"].to(device), y)
-                    .item() * past.size(0)
-                )
-                # take median quantile as point forecast
-                # number of quantiles (unused variable)
-                # _Q = out["prediction"].size(-1)  # (ignored)
+                loss = criterion(out["prediction"].to(device), y)
+                total_loss += loss.item() * past.size(0)
                 yhat = out["prediction"][..., median_idx]
                 ys.append(y.detach().cpu().numpy())
                 preds.append(yhat.detach().cpu().numpy())
@@ -272,7 +280,8 @@ def main():
                             "y_true": float(targets[i, d_idx]),
                             "y_pred": float(preds[i, d_idx]),
                         })
-                    # Append encoder history (past sales) before forecast horizon
+                    # Append encoder history (past sales) before
+                    #   forecast horizon
                     # Use the 'sales' feature from encoder inputs
                     sales_idx = enc_vars.index("sales")
                     past_dates = meta["past_dates"]
@@ -282,34 +291,16 @@ def main():
                                 "date": pd.to_datetime(date),
                                 "store_nbr": store_nbr,
                                 "family": family,
-                                "y_past": float(past[i, d_idx, sales_idx].cpu()),
+                                "y_past": float(
+                                    past[i, d_idx, sales_idx].cpu()
+                                    ),
                             }
                         )
-        if rows:
-            test_forecasts_df = (
-                pd.DataFrame(rows)
-                .sort_values(["family", "store_nbr", "date"])
-            )
-            out_csv = os.path.join(
-                "TFT", "checkpoints", "tft_test_forecasts.csv"
-            )
-            test_forecasts_df.to_csv(out_csv, index=False)
-            print(
-                f"Saved test forecasts CSV -> {out_csv} "
-                f"(rows={len(test_forecasts_df)})"
-            )
+        save_results_csv(rows)
+        return compute_metrics(yval, pval, threshold=0.0)
 
-        ys = np.concatenate(ys, axis=0)
-        preds = np.concatenate(preds, axis=0)
-        clf_val = compute_metrics(yval, pval, threshold=0.0)
-        print(clf_val)
-
-        return clf_val["mae"]
-
-    test_mae = eval_loader(test_loader)
-    print(
-        f"Test MAE: {test_mae:.5f}"
-    )
+    test_metrics = eval_loader(test_loader)
+    print(f"Test matrics: {test_metrics}")
 
 
 if __name__ == "__main__":
