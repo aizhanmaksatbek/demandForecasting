@@ -13,10 +13,51 @@ from utils.utils import set_seed, build_onehot_maps
 from utils.utils import calc_wape, calc_smape, calc_mae
 from config.settings import enc_vars, dec_vars, static_cols, reals_to_scale
 from utils.utils import TensorboardConfig, get_date_splits
-
+from sklearn.metrics import (
+    precision_recall_fscore_support,
+    roc_auc_score,
+    average_precision_score,
+)
 # Add src to path
 CUR_DIR = os.path.dirname(__file__)
 sys.path.append(os.path.join(CUR_DIR, ".."))
+
+
+def compute_clf_metrics(y_true_np,
+                        y_pred_np,
+                        threshold: float):
+    """
+    Binary metrics by thresholding continuous y and predictions.
+    Also computes ROC AUC and PR AUC using continuous scores.
+    """
+    # Ensure numpy arrays, 1D
+    yt = np.asarray(y_true_np).reshape(-1)
+    yp_score = np.asarray(y_pred_np).reshape(-1)
+
+    # Binarize
+    yt_bin = (yt > threshold).astype(np.uint8)
+    yp_bin = (yp_score > threshold).astype(np.uint8)
+
+    metrics = {}
+    try:
+        p, r, f1, _ = precision_recall_fscore_support(
+            yt_bin, yp_bin, average="binary", zero_division=0
+        )
+        metrics.update(precision=float(p), recall=float(r), f1=float(f1))
+    except Exception:
+        metrics.update(precision=None, recall=None, f1=None)
+
+    try:
+        metrics["roc_auc"] = float(roc_auc_score(yt_bin, yp_bin))
+    except Exception:
+        metrics["roc_auc"] = None
+
+    try:
+        metrics["pr_auc"] = float(average_precision_score(yt_bin, yp_bin))
+    except Exception:
+        metrics["pr_auc"] = None
+
+    return metrics
 
 
 def get_data_split(dec_len, enc_len, batch_size, stride):
@@ -161,14 +202,16 @@ def main():
     for epoch in range(1, args.epochs + 1):
         model.train()
         train_loss = 0.0
+        ys, preds = [], []
         pbar = tqdm(train_loader, desc=f"Epoch {epoch}/{args.epochs} [train]")
         for batch in pbar:
+            optimizer.zero_grad()
+
             past = batch["past_inputs"].to(device)     # [B, L_enc, E]
             future = batch["future_inputs"].to(device)  # [B, L_dec, D]
             static = batch["static_inputs"].to(device)  # [B, S]
             y = batch["target"].to(device)             # [B, L_dec]
 
-            optimizer.zero_grad()
             out = model(past, future, static, return_attention=False)
             loss = criterion(out["prediction"].to(device), y)
             loss.backward()
@@ -176,13 +219,35 @@ def main():
             optimizer.step()
             train_loss += loss.item() * past.size(0)
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
-        train_loss /= max(train_len, 1)
+            median_idx = int(np.argmin([abs(q - 0.5) for q in quantiles]))
+            yhat = out["prediction"][..., median_idx]
+            ys.append(y.detach().cpu().numpy())
+            preds.append(yhat.detach().cpu().numpy())
+        ys = np.concatenate(ys, axis=0)
+        preds = np.concatenate(preds, axis=0)
 
-        tensorboard_writer.write("train", train_loss, epoch)
+        mae_ = calc_mae(ys, preds)
+        train_loss /= max(train_len, 1)
+        tensorboard_writer.write("loss_train", train_loss, epoch)
+        tensorboard_writer.write("mae_train", mae_, epoch)
+        print(
+            f"Epoch {epoch}: train_loss={train_loss:.5f} "
+            f"train_mae={mae_:.5f}"
+        )
+        clf_train = compute_clf_metrics(ys, preds, threshold=0.0)
+        print(clf_train)
+        tensorboard_writer.write("train_precision", clf_train.get("precision"), epoch)
+        tensorboard_writer.write("train_recall", clf_train.get("recall"), epoch)
+        tensorboard_writer.write("train_f1", clf_train.get("f1"), epoch)
+        if clf_train.get("roc_auc") is not None:
+            tensorboard_writer.write("train_roc_auc", clf_train["roc_auc"], epoch)
+        if clf_train.get("pr_auc") is not None:
+            tensorboard_writer.write("train_pr_auc", clf_train["pr_auc"], epoch)
 
         # Validation
         model.eval()
         val_loss = 0.0
+        yval, pval = [], []
         with torch.no_grad():
             for batch in val_loader:
                 past = batch["past_inputs"].to(device)
@@ -192,13 +257,32 @@ def main():
                 out = model(past, future, static, return_attention=False)
                 loss = criterion(out["prediction"].to(device), y)
                 val_loss += loss.item() * past.size(0)
+                median_idx = int(np.argmin([abs(q - 0.5) for q in quantiles]))
+                yhat = out["prediction"][..., median_idx]
+                yval.append(y.detach().cpu().numpy())
+                pval.append(yhat.detach().cpu().numpy())
+        yval = np.concatenate(yval, axis=0)
+        pval = np.concatenate(pval, axis=0)
         val_loss /= max(val_len, 1)
-        print(
-            f"Epoch {epoch}: train_loss={train_loss:.5f} "
-            f"val_loss={val_loss:.5f}"
-        )
-
         tensorboard_writer.write("val", val_loss, epoch)
+        
+        mae_ = calc_mae(yval, pval)
+        val_loss /= max(val_len, 1)
+        tensorboard_writer.write("loss_val", val_loss, epoch)
+        tensorboard_writer.write("mae_val", mae_, epoch)
+        print(
+            f"Epoch {epoch}: val_loss={val_loss:.5f} "
+            f"val_mae={mae_:.5f}"
+        )
+        clf_val = compute_clf_metrics(yval, pval, threshold=0.0)
+        print(clf_val)
+        tensorboard_writer.write("val_precision", clf_val.get("precision"), epoch)
+        tensorboard_writer.write("val_recall", clf_val.get("recall"), epoch)
+        tensorboard_writer.write("val_f1", clf_val.get("f1"), epoch)
+        if clf_val.get("roc_auc") is not None:
+            tensorboard_writer.write("val_roc_auc", clf_val["roc_auc"], epoch)
+        if clf_val.get("pr_auc") is not None:
+            tensorboard_writer.write("val_pr_auc", clf_val["pr_auc"], epoch)
 
         if val_loss < best_val:
             best_val = val_loss
@@ -211,7 +295,6 @@ def main():
                 best_path,
             )
             print(f"Saved best model to {best_path}")
-
     tensorboard_writer.close()
 
     # Load best and evaluate on test
@@ -223,6 +306,8 @@ def main():
 
     # Evaluation on validation and test with WAPE, sMAPE and pinball
     def eval_loader(data_loader):
+        median_idx = int(np.argmin([abs(q - 0.5) for q in quantiles]))
+        rows = []
         total_loss = 0.0
         ys, preds = [], []
         with torch.no_grad():
@@ -239,82 +324,62 @@ def main():
                 # take median quantile as point forecast
                 # number of quantiles (unused variable)
                 # _Q = out["prediction"].size(-1)  # (ignored)
-                median_idx = int(np.argmin([abs(q - 0.5) for q in quantiles]))
                 yhat = out["prediction"][..., median_idx]
                 ys.append(y.detach().cpu().numpy())
                 preds.append(yhat.detach().cpu().numpy())
-        pinball = total_loss / max(len(data_loader.dataset), 1)
-        ys = np.concatenate(ys, axis=0)
-        preds = np.concatenate(preds, axis=0)
-        wape_ = calc_wape(ys, preds)
-        smape_ = calc_smape(ys, preds)
-        mae_ = calc_mae(ys, preds)
 
-        return pinball, wape_, smape_, mae_
-
-    val_pinball, val_wape, val_smape, val_mae = eval_loader(val_loader)
-    test_pinball, test_wape, test_smape, test_mae = eval_loader(test_loader)
-    print(
-        f"Validation  - Pinball: {val_pinball:.5f} | "
-        f"WAPE: {val_wape:.5f} | sMAPE: {val_smape:.5f} | MAE: {val_mae:.5f}"
-    )
-    print(
-        f"Test        - Pinball: {test_pinball:.5f} | "
-        f"WAPE: {test_wape:.5f} | sMAPE: {test_smape:.5f} \
-        | MAE: {test_mae:.5f}"
-    )
-
-    # Export per-sample test forecasts (median quantile) for plotting
-    median_idx = int(np.argmin([abs(q - 0.5) for q in quantiles]))
-    rows = []
-    with torch.no_grad():
-        for batch in test_loader:
-            past = batch["past_inputs"].to(device)
-            future = batch["future_inputs"].to(device)
-            static = batch["static_inputs"].to(device)
-            out = model(past, future, static, return_attention=False)
-            preds_med = out["prediction"][..., median_idx]  # [B, L_dec]
-            targets = batch["target"].cpu().numpy()         # [B, L_dec]
-            preds = preds_med.cpu().numpy()
-            metas = batch.get("meta", [])
-            for i, meta in enumerate(metas):
-                store_nbr = meta["store_nbr"]
-                family = meta["family"]
-                fut_dates = meta["future_dates"]
-                for d_idx, date in enumerate(fut_dates):
-                    rows.append({
-                        "date": pd.to_datetime(date),
-                        "store_nbr": store_nbr,
-                        "family": family,
-                        "y_true": float(targets[i, d_idx]),
-                        "y_pred": float(preds[i, d_idx]),
-                    })
-                # Append encoder history (past sales) before forecast horizon
-                # Use the 'sales' feature from encoder inputs
-                sales_idx = enc_vars.index("sales")
-                past_dates = meta["past_dates"]
-                for d_idx, date in enumerate(past_dates):
-                    rows.append(
-                        {
+                metas = batch.get("meta", [])
+                for i, meta in enumerate(metas):
+                    store_nbr = meta["store_nbr"]
+                    family = meta["family"]
+                    fut_dates = meta["future_dates"]
+                    for d_idx, date in enumerate(fut_dates):
+                        rows.append({
                             "date": pd.to_datetime(date),
                             "store_nbr": store_nbr,
                             "family": family,
-                            "y_past": float(past[i, d_idx, sales_idx].cpu()),
-                        }
-                    )
-    if rows:
-        test_forecasts_df = (
-            pd.DataFrame(rows)
-            .sort_values(["family", "store_nbr", "date"])
-        )
-        out_csv = os.path.join(
-            "TFT", "checkpoints", "tft_test_forecasts.csv"
-        )
-        test_forecasts_df.to_csv(out_csv, index=False)
-        print(
-            f"Saved test forecasts CSV -> {out_csv} "
-            f"(rows={len(test_forecasts_df)})"
-        )
+                            "y_true": float(targets[i, d_idx]),
+                            "y_pred": float(preds[i, d_idx]),
+                        })
+                    # Append encoder history (past sales) before forecast horizon
+                    # Use the 'sales' feature from encoder inputs
+                    sales_idx = enc_vars.index("sales")
+                    past_dates = meta["past_dates"]
+                    for d_idx, date in enumerate(past_dates):
+                        rows.append(
+                            {
+                                "date": pd.to_datetime(date),
+                                "store_nbr": store_nbr,
+                                "family": family,
+                                "y_past": float(past[i, d_idx, sales_idx].cpu()),
+                            }
+                        )
+        if rows:
+            test_forecasts_df = (
+                pd.DataFrame(rows)
+                .sort_values(["family", "store_nbr", "date"])
+            )
+            out_csv = os.path.join(
+                "TFT", "checkpoints", "tft_test_forecasts.csv"
+            )
+            test_forecasts_df.to_csv(out_csv, index=False)
+            print(
+                f"Saved test forecasts CSV -> {out_csv} "
+                f"(rows={len(test_forecasts_df)})"
+            )
+
+        ys = np.concatenate(ys, axis=0)
+        preds = np.concatenate(preds, axis=0)
+        mae_ = calc_mae(ys, preds)
+        clf_val = compute_clf_metrics(yval, pval, threshold=0.0)
+        print(clf_val)
+
+        return mae_
+
+    test_mae = eval_loader(test_loader)
+    print(
+        f"Test MAE: {test_mae:.5f}"
+    )
 
 
 if __name__ == "__main__":

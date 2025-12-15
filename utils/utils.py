@@ -55,7 +55,7 @@ class TensorboardConfig:
 
     def write(self, naming, loss, epoch):
         if self.writer:
-            self.writer.add_scalar(f"loss/{naming}", loss, epoch)
+            self.writer.add_scalar(f"{naming}", loss, epoch)
 
     def close(self):
         if self.writer:
