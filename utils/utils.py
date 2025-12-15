@@ -5,6 +5,10 @@ import torch
 import pandas as pd
 from typing import Dict, List
 from torch.utils.tensorboard import SummaryWriter
+from sklearn.metrics import (
+    precision_recall_fscore_support,
+    roc_auc_score
+)
 
 
 def set_seed(seed: int = 42):
@@ -43,6 +47,43 @@ def calc_smape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     "Calculates Symmetric Mean Absolute Percentage Error"
     denom = (np.abs(y_true) + np.abs(y_pred)) + 1e-8
     return float((2.0 * np.abs(y_true - y_pred) / denom).mean())
+
+
+def compute_metrics(y_true_np,
+                    y_pred_np):
+    """
+    Metric computation for classification tasks.
+    MAE, WAPE, sMAPE, precision, recall, F1-score.
+    Computes ROC AUC and PR AUC using continuous scores.
+    """
+    # Ensure numpy arrays, 1D
+    y_true = np.asarray(y_true_np).reshape(-1).astype(np.uint8)
+    y_pred = np.asarray(y_pred_np).reshape(-1).astype(np.uint8)
+
+    metrics = {}
+    metrics["mae"] = calc_mae(y_true, y_pred)
+    metrics["wape"] = calc_wape(y_true, y_pred)
+    metrics["smape"] = calc_smape(y_true, y_pred)
+
+    p, r, f1, _ = precision_recall_fscore_support(
+            y_true, y_pred, average="binary", zero_division=0
+        )
+    metrics.update(precision=float(p), recall=float(r), f1=float(f1))
+    metrics["roc_auc"] = float(roc_auc_score(y_true, y_pred))
+
+    return metrics
+
+
+def write_metrics_to_tensorboard(tensorboard_writer, metrics, epoch):
+    tensorboard_writer.write("train_mae", metrics.get("mae"), epoch)
+    tensorboard_writer.write("train_wape", metrics.get("wape"), epoch)
+    tensorboard_writer.write("train_smape", metrics.get("smape"), epoch)
+    tensorboard_writer.write(
+        "train_precision", metrics.get("precision"), epoch
+        )
+    tensorboard_writer.write("train_recall", metrics.get("recall"), epoch)
+    tensorboard_writer.write("train_f1", metrics.get("f1"), epoch)
+    tensorboard_writer.write("train_roc_auc", metrics["roc_auc"], epoch)
 
 
 class TensorboardConfig:
