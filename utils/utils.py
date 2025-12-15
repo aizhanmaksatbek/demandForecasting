@@ -1,8 +1,10 @@
 import random
 import numpy as np
+import os
 import torch
 import pandas as pd
 from typing import Dict, List
+from torch.utils.tensorboard import SummaryWriter
 
 
 def set_seed(seed: int = 42):
@@ -41,3 +43,21 @@ def calc_smape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     "Calculates Symmetric Mean Absolute Percentage Error"
     denom = (np.abs(y_true) + np.abs(y_pred)) + 1e-8
     return float((2.0 * np.abs(y_true - y_pred) / denom).mean())
+
+
+class TensorboardConfig:
+    def __init__(self, store_flag, log_dir):
+        if store_flag:
+            os.makedirs(log_dir, exist_ok=True)
+            self.writer = SummaryWriter(log_dir=log_dir)
+        else:
+            self.writer = None
+
+    def write(self, naming, loss, epoch):
+        if self.writer:
+            self.writer.add_scalar(f"loss/{naming}", loss, epoch)
+
+    def close(self):
+        if self.writer:
+            self.writer.flush()
+            self.writer.close()

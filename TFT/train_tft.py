@@ -9,10 +9,10 @@ from tqdm import tqdm
 from sklearn.preprocessing import StandardScaler
 from architecture.tft import TemporalFusionTransformer, QuantileLoss
 from tft_dataset import TFTWindowDataset, tft_collate
-from torch.utils.tensorboard import SummaryWriter
 from utils.utils import set_seed, build_onehot_maps
 from utils.utils import calc_wape, calc_smape, calc_mae
 from config.settings import enc_vars, dec_vars, static_cols
+from utils.utils import TensorboardConfig
 
 # Add src to path
 CUR_DIR = os.path.dirname(__file__)
@@ -45,11 +45,10 @@ def main():
     set_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     os.makedirs(os.path.join("TFT", "checkpoints"), exist_ok=True)
-    if args.tensorboard:
-        os.makedirs(args.log_dir, exist_ok=True)
-        writer = SummaryWriter(log_dir=args.log_dir)
-    else:
-        writer = None
+
+    tensorboard_writer = TensorboardConfig(
+        store_flag=args.tensorboard, log_dir=args.log_dir
+    )
 
     # Load panel
     panel_path = os.path.join("TFT", "data", "panel.csv")
@@ -166,8 +165,7 @@ def main():
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
         train_loss /= max(len(train_ds), 1)
 
-        if writer is not None:
-            writer.add_scalar("loss/train", train_loss, epoch)
+        tensorboard_writer.write("train", train_loss, epoch)
 
         # Validation
         model.eval()
@@ -187,8 +185,7 @@ def main():
             f"val_loss={val_loss:.5f}"
         )
 
-        if writer is not None:
-            writer.add_scalar("loss/val", val_loss, epoch)
+        tensorboard_writer.write("val", val_loss, epoch)
 
         if val_loss < best_val:
             best_val = val_loss
@@ -202,9 +199,7 @@ def main():
             )
             print(f"Saved best model to {best_path}")
 
-    if writer is not None:
-        writer.flush()
-        writer.close()
+    tensorboard_writer.close()
 
     # Load best and evaluate on test
     if os.path.exists(best_path):
