@@ -16,6 +16,7 @@ from utils import (
     build_product_graph_adjacency,
     build_onehot_maps,
 )
+from config.settings import enc_vars, dec_vars, static_cols
 
 
 def set_seed(seed: int = 42):
@@ -85,28 +86,6 @@ def main():
         "Run data preprocessing first: python src/data/preprocess_favorita.py"
     )
     df = pd.read_csv(panel_path, parse_dates=["date"])
-
-    # Variables as in TFT baseline
-    enc_vars = [
-        "sales",
-        "transactions",
-        "dcoilwtico",
-        "onpromotion",
-        "dow",
-        "month",
-        "weekofyear",
-        "is_holiday",
-        "is_workday",
-    ]
-    dec_vars = [
-        "onpromotion",
-        "dow",
-        "month",
-        "weekofyear",
-        "is_holiday",
-        "is_workday",
-    ]
-    static_cols = ["store_nbr", "family", "state", "cluster"]
 
     # Define splits
     max_date = df["date"].max()

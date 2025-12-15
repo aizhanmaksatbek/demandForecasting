@@ -7,6 +7,7 @@ from tft_dataset import TFTWindowDataset, tft_collate
 from architecture.tft import TemporalFusionTransformer
 import matplotlib.pyplot as plt
 from utils.utils import build_onehot_maps
+from config.settings import enc_vars, dec_vars, static_cols
 
 
 def extract_tft_intrinsic(model, batch, device=None):
@@ -98,16 +99,6 @@ def run_tft_intrinsic_once(enc_len=56, dec_len=28, stride=1,
     panel_path = os.path.join("TFT", "data", "panel.csv")
     assert os.path.exists(panel_path), "Run data preprocessing first."
     df = pd.read_csv(panel_path, parse_dates=["date"])
-
-    enc_vars = [
-        "sales", "transactions", "dcoilwtico", "onpromotion",
-        "dow", "month", "weekofyear", "is_holiday", "is_workday",
-    ]
-    dec_vars = [
-        "onpromotion", "dow", "month", "weekofyear",
-        "is_holiday", "is_workday",
-    ]
-    static_cols = ["store_nbr", "family", "state", "cluster"]
 
     # Splits identical to train script
     max_date = df["date"].max()
@@ -214,10 +205,6 @@ if __name__ == "__main__":
     dec_path = os.path.join("TFT", "checkpoints", "xai_vsn_dec.npy")
     stat_path = os.path.join("TFT", "checkpoints", "xai_vsn_static.npy")
 
-    enc_vars = [
-        "sales", "transactions", "dcoilwtico", "onpromotion",
-        "dow", "month", "weekofyear", "is_holiday", "is_workday",
-    ]
     if os.path.exists(enc_path):
         enc_imp = np.load(enc_path)  # [V_enc]
         plt.figure(figsize=(10, 3))
@@ -231,10 +218,6 @@ if __name__ == "__main__":
         plt.close()
         print(f"Saved encoder importance bar -> {out_png}")
 
-    dec_vars = [
-        "onpromotion", "dow", "month", "weekofyear",
-        "is_holiday", "is_workday",
-    ]
     if os.path.exists(dec_path):
         dec_imp = np.load(dec_path)  # [V_dec]
         plt.figure(figsize=(10, 3))
@@ -248,7 +231,6 @@ if __name__ == "__main__":
         plt.close()
         print(f"Saved decoder importance bar -> {out_png}")
 
-    static_cols = ["store_nbr", "family", "state", "cluster"]
     if os.path.exists(stat_path):
         stat_imp = np.load(stat_path)  # [V_static]
         plt.figure(figsize=(10, 3))

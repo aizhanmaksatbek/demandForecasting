@@ -12,6 +12,7 @@ from tft_dataset import TFTWindowDataset, tft_collate
 from torch.utils.tensorboard import SummaryWriter
 from utils.utils import set_seed, build_onehot_maps
 from utils.utils import calc_wape, calc_smape, calc_mae
+from config.settings import enc_vars, dec_vars, static_cols
 
 # Add src to path
 CUR_DIR = os.path.dirname(__file__)
@@ -57,19 +58,6 @@ def main():
         "python src/data/preprocess_favorita.py"
     )
     df = pd.read_csv(panel_path, parse_dates=["date"])
-
-    # Define variables
-    # encoder features
-    enc_vars = [
-        "sales", "transactions", "dcoilwtico", "onpromotion",
-        "dow", "month", "weekofyear", "is_holiday", "is_workday",
-    ]
-    # known future features
-    dec_vars = [
-        "onpromotion", "dow", "month", "weekofyear",
-        "is_holiday", "is_workday",
-    ]
-    static_cols = ["store_nbr", "family", "state", "cluster"]
 
     # Scale continuous features (fit on train period only)
     # Determine split dates

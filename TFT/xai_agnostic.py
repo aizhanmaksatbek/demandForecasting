@@ -6,6 +6,7 @@ import torch
 from torch.utils.data import DataLoader
 from architecture.tft import TemporalFusionTransformer
 from tft_dataset import TFTWindowDataset, tft_collate
+from config.settings import enc_vars, dec_vars, static_cols
 
 
 def wape_loader(model, loader, device, quantiles=(0.1, 0.5, 0.9)):
@@ -80,15 +81,6 @@ def build_test_loader(enc_len=56, dec_len=28, stride=1):
     panel_path = os.path.join("TFT", "data", "panel.csv")
     assert os.path.exists(panel_path), "Missing TFT/data/panel.csv"
     df = pd.read_csv(panel_path, parse_dates=["date"])
-    enc_vars = [
-        "sales", "transactions", "dcoilwtico", "onpromotion",
-        "dow", "month", "weekofyear", "is_holiday", "is_workday",
-    ]
-    dec_vars = [
-        "onpromotion", "dow", "month", "weekofyear",
-        "is_holiday", "is_workday",
-    ]
-    static_cols = ["store_nbr", "family", "state", "cluster"]
     max_date = df["date"].max()
     test_days = pd.Timedelta(days=dec_len)
     val_days = pd.Timedelta(days=dec_len)
