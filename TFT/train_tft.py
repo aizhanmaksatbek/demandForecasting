@@ -102,7 +102,7 @@ def main():
     parser.add_argument("--enc-len", type=int, default=56)
     parser.add_argument("--dec-len", type=int, default=28)
     parser.add_argument("--batch-size", type=int, default=256)
-    parser.add_argument("--epochs", type=int, default=200)
+    parser.add_argument("--epochs", type=int, default=0)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--hidden-dim", type=int, default=128)
     parser.add_argument("--d-model", type=int, default=64)
@@ -175,7 +175,7 @@ def main():
     for epoch in range(1, args.epochs + 1):
         model.train()
         train_loss = 0.0
-        ys, preds = [], []
+        train_ys, train_preds = [], []
         pbar = tqdm(train_loader, desc=f"Epoch {epoch}/{args.epochs} [train]")
         for batch in pbar:
             optimizer.zero_grad()
@@ -193,12 +193,12 @@ def main():
             train_loss += loss.item() * past.size(0)
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
             yhat = out["prediction"][..., median_idx]
-            ys.append(y.detach().cpu().numpy())
-            preds.append(yhat.detach().cpu().numpy())
+            train_ys.append(y.detach().cpu().numpy())
+            train_preds.append(yhat.detach().cpu().numpy())
 
         train_loss /= max(train_len, 1)
 
-        metrics_train = compute_metrics(ys, preds)
+        metrics_train = compute_metrics(train_ys, train_preds)
         write_metrics_to_tensorboard(tensorboard_writer, metrics_train, epoch)
         tensorboard_writer.write("loss_train", train_loss, epoch)
         print(metrics_train)
@@ -206,7 +206,7 @@ def main():
         # Validation
         model.eval()
         val_loss = 0.0
-        yval, pval = [], []
+        valid_ys, valid_preds = [], []
         with torch.no_grad():
             for batch in val_loader:
                 past = batch["past_inputs"].to(device)
@@ -218,12 +218,12 @@ def main():
                 val_loss += loss.item() * past.size(0)
 
                 yhat = out["prediction"][..., median_idx]
-                yval.append(y.detach().cpu().numpy())
-                pval.append(yhat.detach().cpu().numpy())
+                valid_ys.append(y.detach().cpu().numpy())
+                valid_preds.append(yhat.detach().cpu().numpy())
 
         val_loss /= max(val_len, 1)
         tensorboard_writer.write("loss_val", val_loss, epoch)
-        metrics_val = compute_metrics(yval, pval, threshold=0.0)
+        metrics_val = compute_metrics(valid_ys, valid_preds)
         print(metrics_val)
         write_metrics_to_tensorboard(tensorboard_writer, metrics_val, epoch)
 
@@ -251,7 +251,7 @@ def main():
     def eval_loader(data_loader):
         rows = []
         total_loss = 0.0
-        ys, preds = [], []
+        test_ys, test_preds = [], []
         with torch.no_grad():
             for batch in data_loader:
                 past = batch["past_inputs"].to(device)
@@ -260,11 +260,13 @@ def main():
                 y = batch["target"].to(device)
 
                 out = model(past, future, static)
+                preds_med = out["prediction"][..., median_idx]  # [B, L_dec]
+                preds = preds_med.cpu().numpy()
                 loss = criterion(out["prediction"].to(device), y)
                 total_loss += loss.item() * past.size(0)
                 yhat = out["prediction"][..., median_idx]
-                ys.append(y.detach().cpu().numpy())
-                preds.append(yhat.detach().cpu().numpy())
+                test_ys.append(y.detach().cpu().numpy())
+                test_preds.append(yhat.detach().cpu().numpy())
 
                 metas = batch.get("meta", [])
                 for i, meta in enumerate(metas):
@@ -297,7 +299,7 @@ def main():
                             }
                         )
         save_results_csv(rows)
-        return compute_metrics(yval, pval, threshold=0.0)
+        return compute_metrics(test_ys, test_preds)
 
     test_metrics = eval_loader(test_loader)
     print(f"Test matrics: {test_metrics}")
