@@ -18,6 +18,10 @@ def set_seed(seed: int = 42):
     torch.cuda.manual_seed_all(seed)
 
 
+def mae(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    return float(np.abs(y_true - y_pred).mean())
+
+
 def wape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     denom = np.abs(y_true).sum() + 1e-8
     return float(np.abs(y_true - y_pred).sum() / denom)

@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader
 from tft_dataset import TFTWindowDataset, tft_collate
 from architecture.tft import TemporalFusionTransformer
 import matplotlib.pyplot as plt
+from utils.utils import build_onehot_maps
 
 
 def extract_tft_intrinsic(model, batch, device=None):
@@ -77,19 +78,6 @@ def summarize_attention(attn_weights: torch.Tensor):
     return attn
 
 
-def _build_onehot_maps(df: pd.DataFrame, cols):
-    maps = {}
-    for c in cols:
-        cats = sorted(df[c].dropna().unique().tolist())
-        idx = {v: i for i, v in enumerate(cats)}
-        dim = len(cats)
-        maps[c] = {}
-        eye = np.eye(dim, dtype=np.float32)
-        for v in cats:
-            maps[c][v] = eye[idx[v]]
-    return maps
-
-
 def run_tft_intrinsic_once(enc_len=56, dec_len=28, stride=1,
                            d_model=64, hidden_dim=128,
                            heads=4, lstm_hidden=64, lstm_layers=1, dropout=0.1,
@@ -130,7 +118,7 @@ def run_tft_intrinsic_once(enc_len=56, dec_len=28, stride=1,
     train_end = val_end - val_days
     split_bounds = (train_end, val_end, test_end)
 
-    static_maps = _build_onehot_maps(df, static_cols)
+    static_maps = build_onehot_maps(df, static_cols)
 
     test_ds = TFTWindowDataset(
         df, enc_len, dec_len, enc_vars, dec_vars, static_cols,

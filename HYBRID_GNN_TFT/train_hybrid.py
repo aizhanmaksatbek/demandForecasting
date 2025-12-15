@@ -1,7 +1,6 @@
 import argparse
 import os
 import random
-from typing import List
 import numpy as np
 import pandas as pd
 import torch
@@ -15,6 +14,7 @@ from utils import (
     build_node_indexer,
     build_static_node_features,
     build_product_graph_adjacency,
+    build_onehot_maps,
 )
 
 
@@ -23,6 +23,10 @@ def set_seed(seed: int = 42):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+
+
+def mae(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    return float(np.abs(y_true - y_pred).mean())
 
 
 def wape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
@@ -111,19 +115,6 @@ def main():
     test_end = max_date
     val_end = test_end - test_days
     train_end = val_end - val_days
-
-    # Build one-hot maps for static features
-    def build_onehot_maps(_df: pd.DataFrame, cols: List[str]):
-        maps = {}
-        for c in cols:
-            cats = sorted(_df[c].dropna().unique().tolist())
-            idx = {v: i for i, v in enumerate(cats)}
-            dim = len(cats)
-            maps[c] = {}
-            eye = np.eye(dim, dtype=np.float32)
-            for v in cats:
-                maps[c][v] = eye[idx[v]]
-        return maps
 
     static_maps = build_onehot_maps(df, static_cols)
     static_dims = [len(static_maps[c]) for c in static_cols]

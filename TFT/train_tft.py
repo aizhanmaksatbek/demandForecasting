@@ -1,8 +1,6 @@
 import argparse
 import os
 import sys
-import random
-from typing import Dict, List
 import numpy as np
 import pandas as pd
 import torch
@@ -12,40 +10,12 @@ from sklearn.preprocessing import StandardScaler
 from architecture.tft import TemporalFusionTransformer, QuantileLoss
 from tft_dataset import TFTWindowDataset, tft_collate
 from torch.utils.tensorboard import SummaryWriter
+from utils.utils import set_seed, build_onehot_maps
+from utils.utils import calc_wape, calc_smape, calc_mae
 
 # Add src to path
 CUR_DIR = os.path.dirname(__file__)
 sys.path.append(os.path.join(CUR_DIR, ".."))
-
-
-def set_seed(seed: int = 42):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-
-
-def build_onehot_maps(df: pd.DataFrame, cols: List[str]) -> Dict[str, Dict]:
-    maps = {}
-    for c in cols:
-        cats = sorted(df[c].dropna().unique().tolist())
-        idx = {v: i for i, v in enumerate(cats)}
-        dim = len(cats)
-        maps[c] = {}
-        eye = np.eye(dim, dtype=np.float32)
-        for v in cats:
-            maps[c][v] = eye[idx[v]]
-    return maps
-
-
-def wape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    denom = np.abs(y_true).sum() + 1e-8
-    return float(np.abs(y_true - y_pred).sum() / denom)
-
-
-def smape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    denom = (np.abs(y_true) + np.abs(y_pred)) + 1e-8
-    return float((2.0 * np.abs(y_true - y_pred) / denom).mean())
 
 
 def main():
@@ -65,14 +35,10 @@ def main():
     parser.add_argument("--stride", type=int, default=1)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--tensorboard", action="store_true",
-                        help="Enable TensorBoard logging"
-                        )
-    parser.add_argument(
-        "--log-dir",
-        type=str,
-        default=os.path.join("TFT", "logs"),
-        help="Directory to store TensorBoard logs",
-    )
+                        help="Enable TensorBoard logging")
+    parser.add_argument("--log-dir", type=str,
+                        default=os.path.join("TFT", "logs"),
+                        help="Directory to store TensorBoard logs")
     args = parser.parse_args()
 
     set_seed(args.seed)
@@ -284,19 +250,22 @@ def main():
         pinball = total_loss / max(len(data_loader.dataset), 1)
         ys = np.concatenate(ys, axis=0)
         preds = np.concatenate(preds, axis=0)
-        wape_ = wape(ys, preds)
-        smape_ = smape(ys, preds)
-        return pinball, wape_, smape_
+        wape_ = calc_wape(ys, preds)
+        smape_ = calc_smape(ys, preds)
+        mae_ = calc_mae(ys, preds)
 
-    val_pinball, val_wape, val_smape = eval_loader(val_loader)
-    test_pinball, test_wape, test_smape = eval_loader(test_loader)
+        return pinball, wape_, smape_, mae_
+
+    val_pinball, val_wape, val_smape, val_mae = eval_loader(val_loader)
+    test_pinball, test_wape, test_smape, test_mae = eval_loader(test_loader)
     print(
         f"Validation  - Pinball: {val_pinball:.5f} | "
-        f"WAPE: {val_wape:.5f} | sMAPE: {val_smape:.5f}"
+        f"WAPE: {val_wape:.5f} | sMAPE: {val_smape:.5f} | MAE: {val_mae:.5f}"
     )
     print(
         f"Test        - Pinball: {test_pinball:.5f} | "
-        f"WAPE: {test_wape:.5f} | sMAPE: {test_smape:.5f}"
+        f"WAPE: {test_wape:.5f} | sMAPE: {test_smape:.5f} \
+        | MAE: {test_mae:.5f}"
     )
 
     # Export per-sample test forecasts (median quantile) for plotting
