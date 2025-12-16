@@ -97,76 +97,17 @@ def get_data_split(dec_len, enc_len, batch_size, stride):
             )
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--enc-len", type=int, default=56)
-    parser.add_argument("--dec-len", type=int, default=28)
-    parser.add_argument("--batch-size", type=int, default=256)
-    parser.add_argument("--epochs", type=int, default=0)
-    parser.add_argument("--lr", type=float, default=1e-3)
-    parser.add_argument("--hidden-dim", type=int, default=128)
-    parser.add_argument("--d-model", type=int, default=64)
-    parser.add_argument("--heads", type=int, default=4)
-    parser.add_argument("--lstm-hidden", type=int, default=64)
-    parser.add_argument("--lstm-layers", type=int, default=1)
-    parser.add_argument("--dropout", type=float, default=0.1)
-    parser.add_argument("--quantiles", type=str, default="0.1,0.5,0.9")
-    parser.add_argument("--stride", type=int, default=1)
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--tensorboard", action="store_true",
-                        help="Enable TensorBoard logging")
-    parser.add_argument("--log-dir", type=str,
-                        default=os.path.join("TFT", "logs"),
-                        help="Directory to store TensorBoard logs")
-    args = parser.parse_args()
-
-    set_seed(args.seed)
+def train_model(model, quantiles, args, train_loader, val_loader,
+                train_len, val_len
+                ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    os.makedirs(os.path.join("TFT", "checkpoints"), exist_ok=True)
-
     tensorboard_writer = TensorboardConfig(
         store_flag=args.tensorboard, log_dir=args.log_dir
     )
-
-    (
-        train_loader,
-        val_loader,
-        test_loader,
-        static_dims,
-        train_len,
-        val_len,
-        test_len,
-    ) = get_data_split(
-        args.dec_len,
-        args.enc_len,
-        args.batch_size,
-        args.stride
-        )
-
-    # Model
-    past_input_dims = [1] * len(enc_vars)
-    future_input_dims = [1] * len(dec_vars)
-    static_input_dims = static_dims
-    quantiles = [float(x) for x in args.quantiles.split(",")]
-
-    model = TemporalFusionTransformer(
-        static_input_dims=static_input_dims,
-        past_input_dims=past_input_dims,
-        future_input_dims=future_input_dims,
-        d_model=args.d_model,
-        hidden_dim=args.hidden_dim,
-        n_heads=args.heads,
-        lstm_hidden_size=args.lstm_hidden,
-        lstm_layers=args.lstm_layers,
-        dropout=args.dropout,
-        num_quantiles=len(quantiles),
-    ).to(device)
-
     criterion = QuantileLoss(quantiles=quantiles)
     optimizer = torch.optim.Adam(
         model.parameters(), lr=args.lr, weight_decay=1e-5
     )
-
     best_val = float("inf")
     best_path = os.path.join("TFT", "checkpoints", "tft_best.pt")
     median_idx = int(np.argmin([abs(q - 0.5) for q in quantiles]))
@@ -240,68 +181,141 @@ def main():
             print(f"Saved TFT model to {best_path} at {epoch} epochs")
     tensorboard_writer.close()
 
+
+# Evaluation on test set
+def eval_loader(model, data_loader, quantiles, test_len):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    median_idx = int(np.argmin([abs(q - 0.5) for q in quantiles]))
     # Load saved TFT model and evaluate on test set
+    best_path = os.path.join("TFT", "checkpoints", "tft_best.pt")
     if os.path.exists(best_path):
         ckpt = torch.load(best_path, map_location=device)
         model.load_state_dict(ckpt["model_state"])
         print(f"Loaded stored TFT model for evaluation {best_path}")
     model.eval()
 
-    # Evaluation on test set
-    def eval_loader(data_loader):
-        rows = []
-        total_loss = 0.0
-        test_ys, test_preds = [], []
-        with torch.no_grad():
-            for batch in data_loader:
-                past = batch["past_inputs"].to(device)
-                future = batch["future_inputs"].to(device)
-                static = batch["static_inputs"].to(device)
-                y = batch["target"].to(device)
+    criterion = QuantileLoss(quantiles=quantiles)
+    rows = []
+    total_loss = 0.0
+    test_ys, test_preds = [], []
+    with torch.no_grad():
+        for batch in data_loader:
+            past = batch["past_inputs"].to(device)
+            future = batch["future_inputs"].to(device)
+            static = batch["static_inputs"].to(device)
+            y = batch["target"].to(device)
 
-                out = model(past, future, static)
-                preds_med = out["prediction"][..., median_idx]  # [B, L_dec]
-                preds = preds_med.cpu().numpy()
-                loss = criterion(out["prediction"].to(device), y)
-                total_loss += loss.item() * past.size(0)
-                yhat = out["prediction"][..., median_idx]
-                test_ys.append(y.detach().cpu().numpy())
-                test_preds.append(yhat.detach().cpu().numpy())
+            out = model(past, future, static)
+            preds_med = out["prediction"][..., median_idx]  # [B, L_dec]
+            preds = preds_med.cpu().numpy()
+            loss = criterion(out["prediction"].to(device), y)
+            total_loss += loss.item() * past.size(0)
+            yhat = out["prediction"][..., median_idx]
+            test_ys.append(y.detach().cpu().numpy())
+            test_preds.append(yhat.detach().cpu().numpy())
 
-                metas = batch.get("meta", [])
-                for i, meta in enumerate(metas):
-                    store_nbr = meta["store_nbr"]
-                    family = meta["family"]
-                    fut_dates = meta["future_dates"]
-                    targets = batch["target"].cpu().numpy()   # [B, L_dec]
-                    for d_idx, date in enumerate(fut_dates):
-                        rows.append({
+            metas = batch.get("meta", [])
+            for i, meta in enumerate(metas):
+                store_nbr = meta["store_nbr"]
+                family = meta["family"]
+                fut_dates = meta["future_dates"]
+                targets = batch["target"].cpu().numpy()   # [B, L_dec]
+                for d_idx, date in enumerate(fut_dates):
+                    rows.append({
+                        "date": pd.to_datetime(date),
+                        "store_nbr": store_nbr,
+                        "family": family,
+                        "y_true": float(targets[i, d_idx]),
+                        "y_pred": float(preds[i, d_idx]),
+                    })
+                # Append encoder history (past sales) before
+                #   forecast horizon
+                # Use the 'sales' feature from encoder inputs
+                sales_idx = enc_vars.index("sales")
+                past_dates = meta["past_dates"]
+                for d_idx, date in enumerate(past_dates):
+                    rows.append(
+                        {
                             "date": pd.to_datetime(date),
                             "store_nbr": store_nbr,
                             "family": family,
-                            "y_true": float(targets[i, d_idx]),
-                            "y_pred": float(preds[i, d_idx]),
-                        })
-                    # Append encoder history (past sales) before
-                    #   forecast horizon
-                    # Use the 'sales' feature from encoder inputs
-                    sales_idx = enc_vars.index("sales")
-                    past_dates = meta["past_dates"]
-                    for d_idx, date in enumerate(past_dates):
-                        rows.append(
-                            {
-                                "date": pd.to_datetime(date),
-                                "store_nbr": store_nbr,
-                                "family": family,
-                                "y_past": float(
-                                    past[i, d_idx, sales_idx].cpu()
-                                    ),
-                            }
-                        )
-        save_results_csv(rows)
-        return compute_metrics(test_ys, test_preds)
+                            "y_past": float(
+                                past[i, d_idx, sales_idx].cpu()
+                                ),
+                        }
+                    )
+    save_results_csv(rows)
+    total_loss /= max(test_len, 1)
+    print(f"Test loss: {total_loss:.4f}")
+    return compute_metrics(test_ys, test_preds)
 
-    test_metrics = eval_loader(test_loader)
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--enc-len", type=int, default=56)
+    parser.add_argument("--dec-len", type=int, default=28)
+    parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument("--epochs", type=int, default=0)
+    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--hidden-dim", type=int, default=128)
+    parser.add_argument("--d-model", type=int, default=64)
+    parser.add_argument("--heads", type=int, default=4)
+    parser.add_argument("--lstm-hidden", type=int, default=64)
+    parser.add_argument("--lstm-layers", type=int, default=1)
+    parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument("--quantiles", type=str, default="0.1,0.5,0.9")
+    parser.add_argument("--stride", type=int, default=1)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--tensorboard", action="store_true",
+                        help="Enable TensorBoard logging")
+    parser.add_argument("--log-dir", type=str,
+                        default=os.path.join("TFT", "logs"),
+                        help="Directory to store TensorBoard logs")
+    args = parser.parse_args()
+
+    set_seed(args.seed)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    os.makedirs(os.path.join("TFT", "checkpoints"), exist_ok=True)
+
+    (
+        train_loader,
+        val_loader,
+        test_loader,
+        static_dims,
+        train_len,
+        val_len,
+        test_len,
+    ) = get_data_split(
+        args.dec_len,
+        args.enc_len,
+        args.batch_size,
+        args.stride
+        )
+
+    # Model
+    past_input_dims = [1] * len(enc_vars)
+    future_input_dims = [1] * len(dec_vars)
+    static_input_dims = static_dims
+    quantiles = [float(x) for x in args.quantiles.split(",")]
+
+    model = TemporalFusionTransformer(
+        static_input_dims=static_input_dims,
+        past_input_dims=past_input_dims,
+        future_input_dims=future_input_dims,
+        d_model=args.d_model,
+        hidden_dim=args.hidden_dim,
+        n_heads=args.heads,
+        lstm_hidden_size=args.lstm_hidden,
+        lstm_layers=args.lstm_layers,
+        dropout=args.dropout,
+        num_quantiles=len(quantiles),
+    ).to(device)
+
+    # train
+    train_model(model, quantiles, args, train_loader, val_loader, train_len,
+                val_len)
+
+    test_metrics = eval_loader(model, test_loader, quantiles, test_len)
     print(f"Test matrics: {test_metrics}")
 
 
