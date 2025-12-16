@@ -77,7 +77,7 @@ def objective(trial: optuna.Trial):
         "heads": trial.suggest_categorical("heads", [2, 4, 8]),
         "dropout": trial.suggest_float("dropout", 0.1, 0.3),
     }
-    fixed_epochs = 1
+    fixed_epochs = 200
     wape = run_train_cli(hparams, fixed_epochs=fixed_epochs)
     return wape  # minimize
 
