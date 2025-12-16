@@ -185,13 +185,15 @@ def train_model(model, quantiles, args, train_loader, val_loader,
                 best_path,
             )
             print(
-                f"Saved TFT model to {best_path} at {epoch} epochs (val_loss={val_loss:.6f})"
+                f"Saved TFT model to {best_path} at {epoch} \
+                    epochs (val_loss={val_loss:.6f})"
             )
         else:
             no_improve_epochs += 1
             if no_improve_epochs >= patience:
                 print(
-                    f"Early stopping at epoch {epoch} (patience={patience}, min_delta={min_delta})"
+                    f"Early stopping at epoch {epoch} (patience={patience},\
+                    min_delta={min_delta})"
                 )
                 break
     tensorboard_writer.close()
