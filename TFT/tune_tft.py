@@ -30,9 +30,13 @@ def run_train_cli(hparams, fixed_epochs):
     ]
     env = os.environ.copy()
     env["PYTHONPATH"] = PROJECT_ROOT + (os.pathsep + env.get("PYTHONPATH", ""))
-    proc = subprocess.run(cmd, cwd=PROJECT_ROOT, env=env, capture_output=True, text=True)
+    proc = subprocess.run(
+        cmd, cwd=PROJECT_ROOT, env=env, capture_output=True, text=True
+        )
     if proc.returncode != 0:
-        raise RuntimeError(f"Training failed:\nSTDERR:\n{proc.stderr}\nSTDOUT:\n{proc.stdout}")
+        raise RuntimeError(
+            f"Training failed:\nSTDERR:\n{proc.stderr}\nSTDOUT:\n{proc.stdout}"
+            )
 
     wape = None
     # Parse validation print (dict) or test metrics line
@@ -55,7 +59,9 @@ def run_train_cli(hparams, fixed_epochs):
                 wape = float(m.group(1))
                 break
     if wape is None:
-        raise RuntimeError("Could not parse WAPE from train output.\n" + proc.stdout)
+        raise RuntimeError(
+            "Could not parse WAPE from train output.\n" + proc.stdout
+            )
     return wape
 
 
@@ -83,7 +89,9 @@ def main():
     ap.add_argument("--direction", type=str, default="minimize")
     args = ap.parse_args()
 
-    study = optuna.create_study(study_name=args.study_name, direction=args.direction)
+    study = optuna.create_study(
+        study_name=args.study_name, direction=args.direction
+        )
     study.optimize(objective, n_trials=args.trials, gc_after_trial=True)
 
     print("Best WAPE:", study.best_value)
@@ -91,7 +99,11 @@ def main():
 
     out_json = os.path.join(PROJECT_ROOT, "TFT", "tft_best_params.json")
     with open(out_json, "w") as f:
-        json.dump({"best_value": study.best_value, "best_params": study.best_params}, f, indent=2)
+        json.dump(
+            {"best_value": study.best_value, "best_params": study.best_params},
+            f,
+            indent=2
+            )
     print(f"Saved best params -> {out_json}")
 
 
