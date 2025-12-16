@@ -111,6 +111,10 @@ def train_model(model, quantiles, args, train_loader, val_loader,
     best_val = float("inf")
     best_path = os.path.join("TFT", "checkpoints", "tft_best.pt")
     median_idx = int(np.argmin([abs(q - 0.5) for q in quantiles]))
+    # Early stopping state
+    patience = int(getattr(args, "early_stopping_patience", 7))
+    min_delta = float(getattr(args, "early_stopping_min_delta", 0.0))
+    no_improve_epochs = 0
 
     # Training loop
     for epoch in range(1, args.epochs + 1):
@@ -168,8 +172,10 @@ def train_model(model, quantiles, args, train_loader, val_loader,
         print(metrics_val)
         write_metrics_to_tensorboard(tensorboard_writer, metrics_val, epoch)
 
-        if val_loss < best_val:
+        improved = (best_val - val_loss) > min_delta
+        if improved:
             best_val = val_loss
+            no_improve_epochs = 0
             torch.save(
                 {
                     "model_state": model.state_dict(),
@@ -178,7 +184,16 @@ def train_model(model, quantiles, args, train_loader, val_loader,
                 },
                 best_path,
             )
-            print(f"Saved TFT model to {best_path} at {epoch} epochs")
+            print(
+                f"Saved TFT model to {best_path} at {epoch} epochs (val_loss={val_loss:.6f})"
+            )
+        else:
+            no_improve_epochs += 1
+            if no_improve_epochs >= patience:
+                print(
+                    f"Early stopping at epoch {epoch} (patience={patience}, min_delta={min_delta})"
+                )
+                break
     tensorboard_writer.close()
 
 
@@ -266,6 +281,10 @@ def main():
     parser.add_argument("--quantiles", type=str, default="0.1,0.5,0.9")
     parser.add_argument("--stride", type=int, default=1)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--early-stopping-patience", type=int, default=7,
+                        help="Stop if no val loss improvement for N epochs")
+    parser.add_argument("--early-stopping-min-delta", type=float, default=0.0,
+                        help="Minimum val loss improvement to reset patience")
     parser.add_argument("--tensorboard", action="store_true",
                         help="Enable TensorBoard logging")
     parser.add_argument("--log-dir", type=str,
