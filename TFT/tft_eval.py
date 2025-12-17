@@ -6,8 +6,8 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 from sklearn.preprocessing import StandardScaler
-from TFT.architecture.tft import TemporalFusionTransformer, QuantileLoss
-from TFT.tft_dataset import TFTWindowDataset, tft_collate
+from architecture.tft import TemporalFusionTransformer, QuantileLoss
+from tft_dataset import TFTWindowDataset, tft_collate
 from utils.utils import set_seed, build_onehot_maps
 from utils.utils import compute_metrics
 from config.settings import enc_vars, dec_vars, static_cols, reals_to_scale

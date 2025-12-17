@@ -83,7 +83,7 @@ def run_tft_intrinsic_once(enc_len=56, dec_len=28, stride=1,
                            d_model=64, hidden_dim=128,
                            heads=4, lstm_hidden=64, lstm_layers=1, dropout=0.1,
                            checkpoint_path=os.path.join(
-                               "TFT", "checkpoints", "tft_best.pt"
+                               "TFT", "checkpoints", "tft_best_train_final.pt"
                                ),
                            out_dir=os.path.join("TFT", "checkpoints"),
                            device: torch.device | None = None):

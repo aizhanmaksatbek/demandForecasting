@@ -157,7 +157,7 @@ def run_permutation_suite(device: torch.device | None = None):
         dec_vars,
         static_cols,
         static_dims,
-        checkpoint_path=os.path.join("TFT", "checkpoints", "tft_best.pt")
+        checkpoint_path=os.path.join("TFT", "checkpoints", "tft_best_train_final.pt")
         )
 
     print("[XAI] Starting permutation importance...")
