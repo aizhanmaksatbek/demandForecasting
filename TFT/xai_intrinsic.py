@@ -1,22 +1,24 @@
 import torch
 import numpy as np
 import os
+import random
 import pandas as pd
+import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 from tft_dataset import TFTWindowDataset, tft_collate
 from architecture.tft import TemporalFusionTransformer
-import matplotlib.pyplot as plt
 from utils.utils import build_onehot_maps
 from config.settings import enc_vars, dec_vars, static_cols
+from utils.utils import get_date_splits
 
 
-def extract_tft_intrinsic(model, batch, device=None):
-    """Return attention and variable selection weights from TFT.
-
-    Expects TFT to support return_attention and return_vsn in forward.
+def extract_tft_intrinsic(model, batch, device):
+    """Retrieves the variable selection weights from TFT.
+    TFT implementation provides variable selection weights under these keys:
+    - 'encoder_variable_importance': [B, L_enc, V_enc]
+    - 'decoder_variable_importance': [B, L_dec, V_dec]
+    - 'static_variable_importance':  [B, V_static]
     """
-    if device is None:
-        device = next(model.parameters()).device
     model.eval()
     with torch.no_grad():
         out = model(
@@ -25,20 +27,10 @@ def extract_tft_intrinsic(model, batch, device=None):
             batch["static_inputs"].to(device),
             return_attention=True,
         )
-    # Safely pick keys if present
-    attn = out.get("attn_weights")  # [B, L_dec, L_enc]
-    # TFT implementation provides variable selection weights under these keys
-    # [B, L_enc, V_enc] or None
-    vsn_enc = out.get("encoder_variable_importance")
-    # [B, L_dec, V_dec] or None
-    vsn_dec = out.get("decoder_variable_importance")
-    # [B, V_static] or None
-    vsn_static = out.get("static_variable_importance")
     return {
-        "attn_weights": attn,
-        "vsn_enc": vsn_enc,
-        "vsn_dec": vsn_dec,
-        "vsn_static": vsn_static,
+        "vsn_enc": out.get("encoder_variable_importance"),
+        "vsn_dec": out.get("decoder_variable_importance"),
+        "vsn_static": out.get("static_variable_importance")
     }
 
 
@@ -47,7 +39,8 @@ def summarize_vsn(
         vsn_dec: torch.Tensor,
         vsn_static: torch.Tensor
         ):
-    """Compute mean importance across batch/time for encoder/decoder/static."""
+    """Computes mean importance across batch/time for encoder/decoder/static.
+    """
     enc_imp = (vsn_enc.mean(dim=(0, 1)).detach().cpu().numpy()
                if vsn_enc is not None else None)
     dec_imp = (vsn_dec.mean(dim=(0, 1)).detach().cpu().numpy()
@@ -57,48 +50,27 @@ def summarize_vsn(
     return enc_imp, dec_imp, stat_imp
 
 
-def summarize_attention(attn_weights: torch.Tensor):
-    """Average decoder attention over batch to get [L_dec, L_enc]."""
-    if attn_weights is None:
-        return None
-    # Handle potential extra head/channel dim: [B, L_dec, L_enc]
-    # or [B, L_dec, L_enc, K]
-    aw = attn_weights
-    if aw.ndim == 4:
-        # average over batch and head/channel
-        attn = aw.mean(dim=(0, 3)).detach().cpu().numpy()  # [L_dec, L_enc]
-    elif aw.ndim == 3:
-        attn = aw.mean(dim=0).detach().cpu().numpy()       # [L_dec, L_enc]
-    elif aw.ndim == 2:
-        attn = aw.detach().cpu().numpy()                   # [L_dec, L_enc]
-    else:
-        # Fallback: collapse all but last two dims
-        while aw.ndim > 2:
-            aw = aw.mean(dim=0)
-        attn = aw.detach().cpu().numpy()
-    return attn
-
-
-def plot_input_set(model, batch, enc_vars, dec_vars, out_path, device=None):
-    """Plot past and future covariates (and target) for a single batch sample.
-
-    Saves a PNG to out_path. Expects `batch` to include keys:
+def plot_input_set(model, batch, batch_size, enc_vars, dec_vars, out_path, device):
+    """
+    Plots one sample input and output from a batch data:
     - past_inputs: [B, L_enc, E]
     - future_inputs: [B, L_dec, D]
     - target: [B, L_dec]
     - meta: list of dicts with 'past_dates' and 'future_dates'
+    - prediction (from model)   : [B, L_dec, Q] or [B, L_dec]
+    Saves plot to out_path.
     """
     try:
-        sample_idx = 0
+        sample_idx = random.randint(0, batch_size - 1)
         past = batch["past_inputs"][sample_idx].detach().cpu().numpy()
         future = batch["future_inputs"][sample_idx].detach().cpu().numpy()
         target = batch.get("target", None)
-        target = (None if target is None else target[sample_idx].detach().cpu().numpy())
+        target = (None if target is None
+                  else target[sample_idx].detach().cpu().numpy()
+                  )
         # Compute model forecast (median quantile) for this sample
         yhat = None
         try:
-            if device is None:
-                device = next(model.parameters()).device
             model.eval()
             with torch.no_grad():
                 out = model(
@@ -121,10 +93,7 @@ def plot_input_set(model, batch, enc_vars, dec_vars, out_path, device=None):
         past_dates = meta.get("past_dates", list(range(past.shape[0])))
         future_dates = meta.get("future_dates", list(range(future.shape[0])))
 
-        import matplotlib.pyplot as plt
-        import pandas as pd
-
-        # Convert dates to pandas datetime for nicer x-axis, if available
+        # Converts dates to pandas datetime for nicer x-axis, if available
         try:
             past_x = pd.to_datetime(past_dates)
         except Exception:
@@ -137,7 +106,9 @@ def plot_input_set(model, batch, enc_vars, dec_vars, out_path, device=None):
         E = past.shape[1]
         D = future.shape[1]
         rows = max(E, D)
-        fig, axes = plt.subplots(rows, 2, figsize=(12, max(6, rows * 1.6)), sharex=False)
+        fig, axes = plt.subplots(
+            rows, 2, figsize=(12, max(6, rows * 1.6)), sharex=False
+            )
         if rows == 1:
             # Ensure axes is 2D array-like
             axes = np.array([axes])
@@ -146,7 +117,7 @@ def plot_input_set(model, batch, enc_vars, dec_vars, out_path, device=None):
         for i in range(E):
             ax = axes[i, 0]
             ax.plot(past_x, past[:, i], lw=1.5)
-            ax.set_title(f"Enc: {enc_vars[i] if i < len(enc_vars) else i}")
+            ax.set_title(f"Past (Encoder): {enc_vars[i] if i < len(enc_vars) else i}")
             ax.grid(True, alpha=0.2)
 
         axes[0, 0].set_ylabel("Value")
@@ -156,22 +127,31 @@ def plot_input_set(model, batch, enc_vars, dec_vars, out_path, device=None):
         for j in range(D):
             ax = axes[j, 1]
             ax.plot(future_x, future[:, j], lw=1.5, color="tab:blue")
-            ax.set_title(f"Dec: {dec_vars[j] if j < len(dec_vars) else j}")
+            ax.set_title(
+                f"Future (Decoder): {dec_vars[j] if j < len(dec_vars) else j}"
+                )
             ax.grid(True, alpha=0.2)
 
         # If target/prediction exist, overlay them on the last decoder panel
         ax_t = axes[min(D, rows) - 1, 1]
         if target is not None:
-            ax_t.plot(future_x, target, lw=2.0, color="tab:red", label="target")
+            ax_t.plot(
+                future_x, target, lw=2.0, color="tab:red", label="target"
+                )
         if yhat is not None:
-            ax_t.plot(future_x, yhat, lw=2.0, color="tab:green", label="prediction")
+            ax_t.plot(
+                future_x, yhat, lw=2.0, color="tab:green", label="prediction"
+                )
         if target is not None or yhat is not None:
             ax_t.legend(loc="upper right")
 
         axes[0, 1].set_ylabel("Value")
         axes[min(D, rows) - 1, 1].set_xlabel("Future horizon")
 
-        fig.suptitle("TFT Input Set (Sample 0): Past & Future Covariates")
+        fig.suptitle(
+            f"TFT Input Set {sample_idx}: Past and Future Covariates,\
+            Target and Prediction"
+            )
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])
         plt.savefig(out_path)
         plt.close(fig)
@@ -187,11 +167,10 @@ def run_tft_intrinsic_once(enc_len=56, dec_len=28, stride=1,
                                ),
                            out_dir=os.path.join("TFT", "checkpoints"),
                            device: torch.device | None = None):
-    """Load panel, model + checkpoint, take one val batch,
-    and dump intrinsic XAI arrays.
+    """Loads a panel.csv, model and checkpoint, take one test batch,
+    and dumps intrinsic XAI arrays from TFT model architecture.
 
-    Saves: xai_attn.npy, xai_vsn_enc.npy, xai_vsn_dec.npy,
-    xai_vsn_static.npy under out_dir.
+    Saves: xai_vsn_enc.npy, xai_vsn_dec.npy, xai_vsn_static.npy under out_dir.
     """
     os.makedirs(out_dir, exist_ok=True)
 
@@ -200,13 +179,7 @@ def run_tft_intrinsic_once(enc_len=56, dec_len=28, stride=1,
     assert os.path.exists(panel_path), "Run data preprocessing first."
     df = pd.read_csv(panel_path, parse_dates=["date"])
 
-    # Splits identical to train script
-    max_date = df["date"].max()
-    test_days = pd.Timedelta(days=dec_len)
-    val_days = pd.Timedelta(days=dec_len)
-    test_end = max_date
-    val_end = test_end - test_days
-    train_end = val_end - val_days
+    train_end, val_end, test_end = get_date_splits(df, dec_len)
     split_bounds = (train_end, val_end, test_end)
 
     static_maps = build_onehot_maps(df, static_cols)
@@ -238,8 +211,7 @@ def run_tft_intrinsic_once(enc_len=56, dec_len=28, stride=1,
         dropout=dropout,
         num_quantiles=3,
     )
-    if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
     # Load checkpoint if present
@@ -252,7 +224,7 @@ def run_tft_intrinsic_once(enc_len=56, dec_len=28, stride=1,
     # Plot the input set used for inference (with forecast overlay)
     try:
         plot_path = os.path.join(out_dir, "xai_input_set.png")
-        plot_input_set(model, batch, enc_vars, dec_vars, plot_path, device=device)
+        plot_input_set(model, batch, 64, enc_vars, dec_vars, plot_path, device)
         print(f"Saved input set plot -> {plot_path}")
     except Exception as e:
         print(f"Could not save input set plot: {e}")
@@ -262,11 +234,8 @@ def run_tft_intrinsic_once(enc_len=56, dec_len=28, stride=1,
         intr["vsn_dec"],
         intr["vsn_static"]
         )
-    attn = summarize_attention(intr["attn_weights"])
 
     # Save arrays if available
-    if attn is not None:
-        np.save(os.path.join(out_dir, "xai_attn.npy"), attn)
     if enc_imp is not None:
         np.save(os.path.join(out_dir, "xai_vsn_enc.npy"), enc_imp)
     if dec_imp is not None:
@@ -274,7 +243,6 @@ def run_tft_intrinsic_once(enc_len=56, dec_len=28, stride=1,
     if stat_imp is not None:
         np.save(os.path.join(out_dir, "xai_vsn_static.npy"), stat_imp)
     return {
-        "attn_shape": None if attn is None else attn.shape,
         "vsn_enc_shape": None if enc_imp is None else enc_imp.shape,
         "vsn_dec_shape": None if dec_imp is None else dec_imp.shape,
         "vsn_static_shape": None if stat_imp is None else stat_imp.shape,
@@ -286,28 +254,6 @@ if __name__ == "__main__":
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     shapes = run_tft_intrinsic_once(device=dev)
     print("Saved TFT XAI arrays. Shapes:", shapes)
-    # Plot attention heatmap if available
-    attn_path = os.path.join("TFT", "checkpoints", "xai_attn.npy")
-    if os.path.exists(attn_path):
-        attn = np.load(attn_path)
-        # Ensure 2D matrix for imshow
-        if attn.ndim > 2:
-            # average all leading dims to get [L_dec, L_enc]
-            while attn.ndim > 2:
-                attn = attn.mean(axis=0)
-
-        A_enc = attn[:, :56]
-        plt.figure(figsize=(8, 6))
-        im = plt.imshow(A_enc, aspect='auto', cmap='viridis')
-        plt.colorbar(im, fraction=0.046, pad=0.04)
-        plt.xlabel("Encoder timestep (past)")
-        plt.ylabel("Decoder timestep (forecast horizon)")
-        plt.title("TFT Decoder-to-Encoder Attention")
-        out_png = os.path.join("TFT", "checkpoints", "xai_attn_heatmap.png")
-        plt.tight_layout()
-        plt.savefig(out_png)
-        plt.close()
-        print(f"Saved attention heatmap -> {out_png}")
 
     # Plot encoder/decoder/static VSN importance if saved
     enc_path = os.path.join("TFT", "checkpoints", "xai_vsn_enc.npy")
