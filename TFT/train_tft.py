@@ -292,6 +292,7 @@ def main():
     parser.add_argument("--log-dir", type=str,
                         default=os.path.join("TFT", "logs"),
                         help="Directory to store TensorBoard logs")
+    parser.add_argument("--train-flag", type=bool, default=True)
     args = parser.parse_args()
 
     set_seed(args.seed)
@@ -333,8 +334,11 @@ def main():
     ).to(device)
 
     # train
-    train_model(model, quantiles, args, train_loader, val_loader, train_len,
-                val_len)
+    if args.train_flag:
+        train_model(model, quantiles, args,
+                    train_loader, val_loader,
+                    train_len, val_len
+                    )
 
     test_metrics = eval_loader(model, test_loader, quantiles, test_len)
     print(f"Test matrics: {test_metrics}")
