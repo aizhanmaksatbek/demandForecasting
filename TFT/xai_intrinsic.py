@@ -79,6 +79,106 @@ def summarize_attention(attn_weights: torch.Tensor):
     return attn
 
 
+def plot_input_set(model, batch, enc_vars, dec_vars, out_path, device=None):
+    """Plot past and future covariates (and target) for a single batch sample.
+
+    Saves a PNG to out_path. Expects `batch` to include keys:
+    - past_inputs: [B, L_enc, E]
+    - future_inputs: [B, L_dec, D]
+    - target: [B, L_dec]
+    - meta: list of dicts with 'past_dates' and 'future_dates'
+    """
+    try:
+        sample_idx = 0
+        past = batch["past_inputs"][sample_idx].detach().cpu().numpy()
+        future = batch["future_inputs"][sample_idx].detach().cpu().numpy()
+        target = batch.get("target", None)
+        target = (None if target is None else target[sample_idx].detach().cpu().numpy())
+        # Compute model forecast (median quantile) for this sample
+        yhat = None
+        try:
+            if device is None:
+                device = next(model.parameters()).device
+            model.eval()
+            with torch.no_grad():
+                out = model(
+                    batch["past_inputs"].to(device),
+                    batch["future_inputs"].to(device),
+                    batch["static_inputs"].to(device),
+                )
+            preds = out.get("prediction")  # [B, L_dec, Q] or [B, L_dec]
+            if preds is not None:
+                preds = preds.detach().cpu().numpy()
+                if preds.ndim == 3:
+                    median_idx = preds.shape[-1] // 2
+                    yhat = preds[sample_idx, :, median_idx]
+                elif preds.ndim == 2:
+                    yhat = preds[sample_idx, :]
+        except Exception:
+            yhat = None
+        meta_list = batch.get("meta", [])
+        meta = meta_list[sample_idx] if meta_list else {}
+        past_dates = meta.get("past_dates", list(range(past.shape[0])))
+        future_dates = meta.get("future_dates", list(range(future.shape[0])))
+
+        import matplotlib.pyplot as plt
+        import pandas as pd
+
+        # Convert dates to pandas datetime for nicer x-axis, if available
+        try:
+            past_x = pd.to_datetime(past_dates)
+        except Exception:
+            past_x = list(range(past.shape[0]))
+        try:
+            future_x = pd.to_datetime(future_dates)
+        except Exception:
+            future_x = list(range(future.shape[0]))
+
+        E = past.shape[1]
+        D = future.shape[1]
+        rows = max(E, D)
+        fig, axes = plt.subplots(rows, 2, figsize=(12, max(6, rows * 1.6)), sharex=False)
+        if rows == 1:
+            # Ensure axes is 2D array-like
+            axes = np.array([axes])
+
+        # Plot encoder covariates
+        for i in range(E):
+            ax = axes[i, 0]
+            ax.plot(past_x, past[:, i], lw=1.5)
+            ax.set_title(f"Enc: {enc_vars[i] if i < len(enc_vars) else i}")
+            ax.grid(True, alpha=0.2)
+
+        axes[0, 0].set_ylabel("Value")
+        axes[min(E, rows) - 1, 0].set_xlabel("Past timeline")
+
+        # Plot decoder covariates and optional target overlay in bottom panel
+        for j in range(D):
+            ax = axes[j, 1]
+            ax.plot(future_x, future[:, j], lw=1.5, color="tab:blue")
+            ax.set_title(f"Dec: {dec_vars[j] if j < len(dec_vars) else j}")
+            ax.grid(True, alpha=0.2)
+
+        # If target/prediction exist, overlay them on the last decoder panel
+        ax_t = axes[min(D, rows) - 1, 1]
+        if target is not None:
+            ax_t.plot(future_x, target, lw=2.0, color="tab:red", label="target")
+        if yhat is not None:
+            ax_t.plot(future_x, yhat, lw=2.0, color="tab:green", label="prediction")
+        if target is not None or yhat is not None:
+            ax_t.legend(loc="upper right")
+
+        axes[0, 1].set_ylabel("Value")
+        axes[min(D, rows) - 1, 1].set_xlabel("Future horizon")
+
+        fig.suptitle("TFT Input Set (Sample 0): Past & Future Covariates")
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+        plt.savefig(out_path)
+        plt.close(fig)
+    except Exception as e:
+        print(f"Failed to plot input set: {e}")
+
+
 def run_tft_intrinsic_once(enc_len=56, dec_len=28, stride=1,
                            d_model=64, hidden_dim=128,
                            heads=4, lstm_hidden=64, lstm_layers=1, dropout=0.1,
@@ -149,6 +249,13 @@ def run_tft_intrinsic_once(enc_len=56, dec_len=28, stride=1,
 
     # One batch
     batch = next(iter(test_loader))
+    # Plot the input set used for inference (with forecast overlay)
+    try:
+        plot_path = os.path.join(out_dir, "xai_input_set.png")
+        plot_input_set(model, batch, enc_vars, dec_vars, plot_path, device=device)
+        print(f"Saved input set plot -> {plot_path}")
+    except Exception as e:
+        print(f"Could not save input set plot: {e}")
     intr = extract_tft_intrinsic(model, batch, device=device)
     enc_imp, dec_imp, stat_imp = summarize_vsn(
         intr["vsn_enc"],
@@ -188,8 +295,10 @@ if __name__ == "__main__":
             # average all leading dims to get [L_dec, L_enc]
             while attn.ndim > 2:
                 attn = attn.mean(axis=0)
+
+        A_enc = attn[:, :56]
         plt.figure(figsize=(8, 6))
-        im = plt.imshow(attn, aspect='auto', cmap='viridis')
+        im = plt.imshow(A_enc, aspect='auto', cmap='viridis')
         plt.colorbar(im, fraction=0.046, pad=0.04)
         plt.xlabel("Encoder timestep (past)")
         plt.ylabel("Decoder timestep (forecast horizon)")
