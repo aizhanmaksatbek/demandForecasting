@@ -69,15 +69,15 @@ def objective(trial: optuna.Trial):
     # Simple search space (no epoch search)
     hparams = {
         "enc_len": trial.suggest_categorical("enc_len", [56, 90]),
-        "dec_len": trial.suggest_categorical("dec_len", [14, 28]),
-        "batch_size": trial.suggest_categorical("batch_size", [128, 256]),
+        "dec_len": trial.suggest_categorical("dec_len", [15, 28, 60, 90]),
+        "batch_size": trial.suggest_categorical("batch_size", [1024, 2048]),
         "lr": trial.suggest_float("lr", 5e-4, 2e-3, log=True),
         "hidden_dim": trial.suggest_categorical("hidden_dim", [64, 128, 256]),
         "d_model": trial.suggest_categorical("d_model", [64, 128, 256]),
-        "heads": trial.suggest_categorical("heads", [2, 4, 8]),
+        "heads": trial.suggest_categorical("heads", [4, 8, 32, 128]),
         "dropout": trial.suggest_float("dropout", 0.1, 0.3),
     }
-    fixed_epochs = 200
+    fixed_epochs = 20
     wape = run_train_cli(hparams, fixed_epochs=fixed_epochs)
     return wape  # minimize
 
