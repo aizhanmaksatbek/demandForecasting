@@ -163,6 +163,48 @@ def plot_input_set(
         print(f"Failed to plot input set: {e}")
 
 
+def save_variable_imp():
+    # Plot encoder/decoder/static VSN importance if saved
+    enc_path = os.path.join("TFT", "checkpoints", "xai_vsn_enc.npy")
+    dec_path = os.path.join("TFT", "checkpoints", "xai_vsn_dec.npy")
+    stat_path = os.path.join("TFT", "checkpoints", "xai_vsn_static.npy")
+    plots = []
+    if os.path.exists(enc_path):
+        enc_imp = np.load(enc_path)  # [V_enc]
+        plots.append(("Encoder Variable Importance (avg)", enc_vars, enc_imp))
+    if os.path.exists(dec_path):
+        dec_imp = np.load(dec_path)  # [V_dec]
+        plots.append(("Decoder Variable Importance (avg)", dec_vars, dec_imp))
+    if os.path.exists(stat_path):
+        stat_imp = np.load(stat_path)  # [V_static]
+        plots.append(
+            ("Static Variable Importance (avg)", static_cols, stat_imp)
+        )
+
+    if len(plots) > 0:
+        fig, axes = plt.subplots(
+            len(plots), 1, figsize=(12, 3.5 * len(plots)), sharex=False
+        )
+        if len(plots) == 1:
+            axes = [axes]
+        for idx, (title, labels, vals) in enumerate(plots):
+            ax = axes[idx]
+            x = np.arange(len(labels))
+            ax.bar(x, vals)
+            ax.set_title(title)
+            ax.set_ylabel("Importance")
+            ax.set_xticks(x)
+            ax.set_xticklabels(labels, rotation=45, ha="right")
+            ax.grid(True, alpha=0.2)
+        plt.tight_layout()
+        out_png = os.path.join("TFT", "checkpoints", "xai_vsn_bars.png")
+        plt.savefig(out_png)
+        plt.close(fig)
+        print(f"Saved combined importance bars -> {out_png}")
+    else:
+        print("No VSN importance arrays found to plot.")
+
+
 def run_tft_intrinsic_once(enc_len=56, dec_len=28, stride=1,
                            d_model=64, hidden_dim=128,
                            heads=4, lstm_hidden=64, lstm_layers=1, dropout=0.1,
@@ -259,46 +301,4 @@ if __name__ == "__main__":
     shapes = run_tft_intrinsic_once(device=dev)
     print("Saved TFT XAI arrays. Shapes:", shapes)
 
-    # Plot encoder/decoder/static VSN importance if saved
-    enc_path = os.path.join("TFT", "checkpoints", "xai_vsn_enc.npy")
-    dec_path = os.path.join("TFT", "checkpoints", "xai_vsn_dec.npy")
-    stat_path = os.path.join("TFT", "checkpoints", "xai_vsn_static.npy")
-
-    if os.path.exists(enc_path):
-        enc_imp = np.load(enc_path)  # [V_enc]
-        plt.figure(figsize=(10, 3))
-        plt.bar(enc_vars, enc_imp)
-        plt.title("Encoder Variable Importance (avg)")
-        plt.xlabel("Encoder variables index")
-        plt.ylabel("Importance")
-        out_png = os.path.join("TFT", "checkpoints", "xai_vsn_enc_bar.png")
-        plt.tight_layout()
-        plt.savefig(out_png)
-        plt.close()
-        print(f"Saved encoder importance bar -> {out_png}")
-
-    if os.path.exists(dec_path):
-        dec_imp = np.load(dec_path)  # [V_dec]
-        plt.figure(figsize=(10, 3))
-        plt.bar(dec_vars, dec_imp)
-        plt.title("Decoder Variable Importance (avg)")
-        plt.xlabel("Decoder variables index")
-        plt.ylabel("Importance")
-        out_png = os.path.join("TFT", "checkpoints", "xai_vsn_dec_bar.png")
-        plt.tight_layout()
-        plt.savefig(out_png)
-        plt.close()
-        print(f"Saved decoder importance bar -> {out_png}")
-
-    if os.path.exists(stat_path):
-        stat_imp = np.load(stat_path)  # [V_static]
-        plt.figure(figsize=(10, 3))
-        plt.bar(static_cols, stat_imp)
-        plt.title("Static Variable Importance (avg)")
-        plt.xlabel("Static variables index")
-        plt.ylabel("Importance")
-        out_png = os.path.join("TFT", "checkpoints", "xai_vsn_static_bar.png")
-        plt.tight_layout()
-        plt.savefig(out_png)
-        plt.close()
-        print(f"Saved static importance bar -> {out_png}")
+    save_variable_imp()
