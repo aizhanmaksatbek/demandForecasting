@@ -50,7 +50,9 @@ def summarize_vsn(
     return enc_imp, dec_imp, stat_imp
 
 
-def plot_input_set(model, batch, batch_size, enc_vars, dec_vars, out_path, device):
+def plot_input_set(
+        model, batch, batch_size, enc_vars, dec_vars, out_path, device
+        ):
     """
     Plots one sample input and output from a batch data:
     - past_inputs: [B, L_enc, E]
@@ -117,7 +119,9 @@ def plot_input_set(model, batch, batch_size, enc_vars, dec_vars, out_path, devic
         for i in range(E):
             ax = axes[i, 0]
             ax.plot(past_x, past[:, i], lw=1.5)
-            ax.set_title(f"Past (Encoder): {enc_vars[i] if i < len(enc_vars) else i}")
+            ax.set_title(
+                f"Past (Encoder): {enc_vars[i] if i < len(enc_vars) else i}"
+                )
             ax.grid(True, alpha=0.2)
 
         axes[0, 0].set_ylabel("Value")
