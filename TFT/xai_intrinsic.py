@@ -12,6 +12,9 @@ from config.settings import enc_vars, dec_vars, static_cols
 from utils.utils import get_date_splits
 
 
+out_dir = os.path.join("TFT", "checkpoints")
+
+
 def extract_tft_intrinsic(model, batch, device):
     """Retrieves the variable selection weights from TFT.
     TFT implementation provides variable selection weights under these keys:
@@ -51,7 +54,7 @@ def summarize_vsn(
 
 
 def plot_input_set(
-        model, batch, batch_size, enc_vars, dec_vars, out_path, device
+        model, batch, batch_size, enc_vars, dec_vars, device
         ):
     """
     Plots one sample input and output from a batch data:
@@ -94,6 +97,8 @@ def plot_input_set(
         meta = meta_list[sample_idx] if meta_list else {}
         past_dates = meta.get("past_dates", list(range(past.shape[0])))
         future_dates = meta.get("future_dates", list(range(future.shape[0])))
+        prod_fam = meta.get("family", "N/A")
+        store_nbr = meta.get("store_nbr", "N/A")
 
         # Converts dates to pandas datetime for nicer x-axis, if available
         try:
@@ -152,12 +157,55 @@ def plot_input_set(
         axes[0, 1].set_ylabel("Value")
         axes[min(D, rows) - 1, 1].set_xlabel("Future horizon")
 
-        fig.suptitle(
-            f"TFT Input Set {sample_idx}: Past and Future Covariates,\
-            Target and Prediction"
+        # Variable Importances
+        intr = extract_tft_intrinsic(model, batch, device=device)
+        enc_imp, dec_imp, stat_imp = summarize_vsn(
+            intr["vsn_enc"],
+            intr["vsn_dec"],
+            intr["vsn_static"]
             )
+        for j in range(min(D, rows), min(D, rows) + 3):
+            ax = axes[j, 1]
+            if j - min(D, rows) == 0 and enc_imp is not None:
+                x = np.arange(len(enc_vars))
+                ax.bar(x, enc_imp)
+                ax.set_title("Encoder Variable Importance (avg)")
+                ax.set_xticks(x)
+                ax.set_xticklabels(
+                    enc_vars, rotation=45, ha="right"
+                    )
+                ax.set_ylabel("Importance")
+                ax.grid(True, alpha=0.2)
+            elif j - min(D, rows) == 1 and dec_imp is not None:
+                x = np.arange(len(dec_vars))
+                ax.bar(x, dec_imp)
+                ax.set_title("Decoder Variable Importance (avg)")
+                ax.set_xticks(x)
+                ax.set_xticklabels(
+                    dec_vars, rotation=45, ha="right"
+                    )
+                ax.set_ylabel("Importance")
+                ax.grid(True, alpha=0.2)
+            elif j - min(D, rows) == 2 and stat_imp is not None:
+                x = np.arange(len(stat_imp))
+                ax.bar(x, stat_imp)
+                ax.set_title("Static Variable Importance (avg)")
+                ax.set_xticks(x)
+                ax.set_xticklabels(
+                    static_cols,
+                    rotation=45, ha="right"
+                    )
+                ax.set_ylabel("Importance")
+                ax.grid(True, alpha=0.2)
+
+        fig.suptitle(
+            f"TFT XAI for product family {prod_fam} - Store {store_nbr}"
+            )
+        plot_path = os.path.join(out_dir, f"xai_{prod_fam}_{store_nbr}.png")
+        print(f"Saved input set plot -> {plot_path}")
+
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-        plt.savefig(out_path)
+        plt.savefig(plot_path)
         plt.close(fig)
     except Exception as e:
         print(f"Failed to plot input set: {e}")
@@ -210,14 +258,13 @@ def run_tft_intrinsic_once(enc_len=56, dec_len=28, stride=1,
                            heads=4, lstm_hidden=64, lstm_layers=1, dropout=0.1,
                            checkpoint_path=os.path.join(
                                "TFT", "checkpoints", "tft_best_train_final.pt"
-                               ),
-                           out_dir=os.path.join("TFT", "checkpoints"),
-                           device: torch.device | None = None):
+                               ), device: torch.device | None = None):
     """Loads a panel.csv, model and checkpoint, take one test batch,
     and dumps intrinsic XAI arrays from TFT model architecture.
 
     Saves: xai_vsn_enc.npy, xai_vsn_dec.npy, xai_vsn_static.npy under out_dir.
     """
+    # out_dir=os.path.join("TFT", "checkpoints")
     os.makedirs(out_dir, exist_ok=True)
 
     # Load panel
@@ -235,7 +282,7 @@ def run_tft_intrinsic_once(enc_len=56, dec_len=28, stride=1,
         split_bounds, split="test", stride=stride,
         static_onehot_maps=static_maps,
     )
-    test_loader = DataLoader(test_ds, batch_size=64,
+    test_loader = DataLoader(test_ds, batch_size=1,
                              shuffle=False, num_workers=0,
                              pin_memory=True, collate_fn=tft_collate
                              )
@@ -265,34 +312,13 @@ def run_tft_intrinsic_once(enc_len=56, dec_len=28, stride=1,
         ckpt = torch.load(checkpoint_path, map_location=device)
         model.load_state_dict(ckpt["model_state"])
 
-    # One batch
-    batch = next(iter(test_loader))
     # Plot the input set used for inference (with forecast overlay)
     try:
-        plot_path = os.path.join(out_dir, "xai_input_set.png")
-        plot_input_set(model, batch, 64, enc_vars, dec_vars, plot_path, device)
-        print(f"Saved input set plot -> {plot_path}")
+        for batch in test_loader:
+            plot_input_set(model, batch, 1, enc_vars, dec_vars, device)
+
     except Exception as e:
         print(f"Could not save input set plot: {e}")
-    intr = extract_tft_intrinsic(model, batch, device=device)
-    enc_imp, dec_imp, stat_imp = summarize_vsn(
-        intr["vsn_enc"],
-        intr["vsn_dec"],
-        intr["vsn_static"]
-        )
-
-    # Save arrays if available
-    if enc_imp is not None:
-        np.save(os.path.join(out_dir, "xai_vsn_enc.npy"), enc_imp)
-    if dec_imp is not None:
-        np.save(os.path.join(out_dir, "xai_vsn_dec.npy"), dec_imp)
-    if stat_imp is not None:
-        np.save(os.path.join(out_dir, "xai_vsn_static.npy"), stat_imp)
-    return {
-        "vsn_enc_shape": None if enc_imp is None else enc_imp.shape,
-        "vsn_dec_shape": None if dec_imp is None else dec_imp.shape,
-        "vsn_static_shape": None if stat_imp is None else stat_imp.shape,
-    }
 
 
 if __name__ == "__main__":
