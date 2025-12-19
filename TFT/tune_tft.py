@@ -5,14 +5,11 @@ import argparse
 import re
 import json
 import optuna
-from datetime import datetime
-try:
-    # tqdm progress bar for Optuna
-    from optuna.integration import TQDMCallback
-except Exception:
-    TQDMCallback = None
+from optuna.storages import JournalStorage
+from optuna.storages.journal import JournalFileBackend
 
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "TFT"))
 
 
 def run_train_cli(hparams, fixed_epochs):
@@ -53,7 +50,7 @@ def run_train_cli(hparams, fixed_epochs):
                 break
             except Exception:
                 pass
-        if "Test matrics:" in line and "'wape':" in line:
+        if "Test Metrics:" in line and "'wape':" in line:
             m = re.search(r"'wape':\s*([0-9\.eE+-]+)", line)
             if m:
                 wape = float(m.group(1))
@@ -83,58 +80,9 @@ def objective(trial: optuna.Trial):
         "heads": trial.suggest_categorical("heads", [4, 8, 32, 128]),
         "dropout": trial.suggest_float("dropout", 0.1, 0.3),
     }
-    fixed_epochs = 20
+    fixed_epochs = 1
     wape = run_train_cli(hparams, fixed_epochs=fixed_epochs)
-    return wape  # minimize
-
-
-def _ensure_dir(p):
-    d = os.path.dirname(p)
-    if d and not os.path.exists(d):
-        os.makedirs(d, exist_ok=True)
-
-
-def _trial_csv_logger(log_path):
-    """Optuna callback: append each trial's params and value to CSV."""
-    header_written = os.path.exists(log_path)
-
-    def _cb(study: optuna.Study, trial: optuna.trial.FrozenTrial):
-        nonlocal header_written
-        _ensure_dir(log_path)
-        # Compose row
-        row = {
-            "datetime": datetime.utcnow().isoformat(),
-            "trial_number": trial.number,
-            "state": str(trial.state),
-            "value": trial.value,
-        }
-        # Flatten params
-        for k, v in trial.params.items():
-            row[f"param_{k}"] = v
-        # Write CSV (append)
-        import csv
-        with open(log_path, "a", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=list(row.keys()))
-            if not header_written:
-                writer.writeheader()
-                header_written = True
-            writer.writerow(row)
-
-    return _cb
-
-
-def _trial_text_logger(log_path):
-    """Optuna callback: append a human-readable line per trial."""
-    def _cb(study: optuna.Study, trial: optuna.trial.FrozenTrial):
-        _ensure_dir(log_path)
-        line = (
-            f"{datetime.utcnow().isoformat()} | trial={trial.number} "
-            f"state={trial.state} value={trial.value} best={getattr(study, 'best_value', None)} "
-            f"params={trial.params}\n"
-        )
-        with open(log_path, "a") as f:
-            f.write(line)
-    return _cb
+    return wape
 
 
 def main():
@@ -143,45 +91,32 @@ def main():
     ap.add_argument("--study_name", type=str, default="tft_tuning")
     ap.add_argument("--direction", type=str, default="minimize")
     ap.add_argument("--storage", type=str, default=None,
-                    help="Optuna storage URL, e.g. sqlite:///TFT/tft_optuna.db")
-    ap.add_argument("--log_csv", type=str, default=os.path.join("TFT", "tuning_results.csv"),
-                    help="CSV file to append per-trial results")
-    ap.add_argument("--log_text", type=str, default=os.path.join("TFT", "tuning_progress.log"),
-                    help="Text log capturing per-trial progress")
+                    help="Optuna storage log file name")
     args = ap.parse_args()
 
     # Create study with optional storage for persistent tracking
-    if args.storage:
-        study = optuna.create_study(
-            study_name=args.study_name,
-            direction=args.direction,
-            storage=args.storage,
-            load_if_exists=True,
+    storage = JournalStorage(
+        JournalFileBackend("TFT/checkpoinys/optuna_journal.log")
         )
-    else:
-        study = optuna.create_study(
-            study_name=args.study_name, direction=args.direction
-        )
-
-    # Set per-trial loggers
-    trial_cb = _trial_csv_logger(os.path.join(PROJECT_ROOT, args.log_csv))
-    text_cb = _trial_text_logger(os.path.join(PROJECT_ROOT, args.log_text))
-
-    callbacks = [trial_cb, text_cb]
-    if TQDMCallback is not None:
-        callbacks.append(TQDMCallback(n_trials=args.trials, metric_name="WAPE"))
+    study = optuna.create_study(
+        study_name=args.study_name,
+        direction=args.direction,
+        storage=storage,
+        load_if_exists=True,
+    )
 
     study.optimize(
         objective,
         n_trials=args.trials,
-        gc_after_trial=True,
-        callbacks=callbacks,
+        gc_after_trial=True
     )
 
     print("Best WAPE:", study.best_value)
     print("Best params:", study.best_params)
 
-    out_json = os.path.join(PROJECT_ROOT, "TFT", "tft_best_params.json")
+    out_json = os.path.join(
+        PROJECT_ROOT, "checkpoints", "tft_best_params.json"
+        )
     with open(out_json, "w") as f:
         json.dump(
             {"best_value": study.best_value, "best_params": study.best_params},
@@ -192,9 +127,10 @@ def main():
 
     # Also export full trials dataframe if pandas is available
     try:
-        import pandas as pd
         df = study.trials_dataframe()
-        out_csv = os.path.join(PROJECT_ROOT, "TFT", "tuning_trials_full.csv")
+        out_csv = os.path.join(
+            PROJECT_ROOT, "checkpoints", "tuning_trials_full.csv"
+            )
         df.to_csv(out_csv, index=False)
         print(f"Saved all trial results -> {out_csv}")
     except Exception as e:

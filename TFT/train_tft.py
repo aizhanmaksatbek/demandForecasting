@@ -146,7 +146,9 @@ def train_model(model, quantiles, args, train_loader, val_loader,
         metrics_train = compute_metrics(train_ys, train_preds)
         write_metrics_to_tensorboard(tensorboard_writer, metrics_train, epoch)
         tensorboard_writer.write("loss_train", train_loss, epoch)
-        print(metrics_train)
+        print(f"Epoch {epoch} Train Loss: {train_loss:.6f}, \
+              Train Metrics: {metrics_train}"
+              )
 
         # Validation
         model.eval()
@@ -169,7 +171,9 @@ def train_model(model, quantiles, args, train_loader, val_loader,
         val_loss /= max(val_len, 1)
         tensorboard_writer.write("loss_val", val_loss, epoch)
         metrics_val = compute_metrics(valid_ys, valid_preds)
-        print(metrics_val)
+        print(f"Epoch {epoch} Validation Loss: {val_loss:.6f}, \
+              Validation Metrics: {metrics_val}"
+              )
         write_metrics_to_tensorboard(tensorboard_writer, metrics_val, epoch)
 
         improved = (best_val - val_loss) > min_delta
@@ -263,8 +267,9 @@ def eval_loader(model, data_loader, quantiles, test_len):
                     )
     save_results_csv(rows)
     total_loss /= max(test_len, 1)
-    print(f"Test loss: {total_loss:.4f}")
-    return compute_metrics(test_ys, test_preds)
+    test_metrics = compute_metrics(test_ys, test_preds)
+    print(f"Test Loss: {total_loss:.6f}. Test Metrics: {test_metrics}")
+    return test_metrics
 
 
 def main():
