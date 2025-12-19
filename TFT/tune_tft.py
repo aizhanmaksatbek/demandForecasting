@@ -9,7 +9,7 @@ from optuna.storages import JournalStorage
 from optuna.storages.journal import JournalFileBackend
 
 
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "TFT"))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 
 def run_train_cli(hparams, fixed_epochs):
@@ -73,7 +73,9 @@ def objective(trial: optuna.Trial):
     hparams = {
         "enc_len": trial.suggest_categorical("enc_len", [56, 90]),
         "dec_len": trial.suggest_categorical("dec_len", [15, 28, 60, 90]),
-        "batch_size": trial.suggest_categorical("batch_size", [1024, 2048]),
+        "batch_size": trial.suggest_categorical(
+            "batch_size", [256, 512, 1024]
+            ),
         "lr": trial.suggest_float("lr", 5e-4, 2e-3, log=True),
         "hidden_dim": trial.suggest_categorical("hidden_dim", [64, 128, 256]),
         "d_model": trial.suggest_categorical("d_model", [64, 128, 256]),
@@ -95,8 +97,12 @@ def main():
     args = ap.parse_args()
 
     # Create study with optional storage for persistent tracking
+    # create a file if doesn't exist optuna_journal.log
+    if not os.path.exists("TFT/checkpoints/optuna_journal.log"):
+        open("TFT/checkpoints/optuna_journal.log", 'a').close()
+
     storage = JournalStorage(
-        JournalFileBackend("TFT/checkpoinys/optuna_journal.log")
+        JournalFileBackend("TFT/checkpoints/optuna_journal.log")
         )
     study = optuna.create_study(
         study_name=args.study_name,
