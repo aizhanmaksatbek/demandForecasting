@@ -152,8 +152,11 @@ def main():
     )
 
     # Load checkpoint first to read training-time config
-    checkpoint_path = os.path.join("TFT", "checkpoints", f"{args.checkpoints_file_path}")
-    assert os.path.exists(checkpoint_path), f"Checkpoint not found: {checkpoint_path}"
+    checkpoint_path = os.path.join(
+        "TFT", "checkpoints", f"{args.checkpoints_file_path}"
+        )
+    assert os.path.exists(checkpoint_path), f"Checkpoint not \
+        found: {checkpoint_path}"
     ckpt = torch.load(checkpoint_path, map_location=device)
 
     # Use quantiles from checkpoint to match output head size
@@ -193,8 +196,10 @@ def main():
     # Load weights strictly
     model.load_state_dict(ckpt["model_state"], strict=True)
     print(f"Loaded stored TFT model for evaluation {checkpoint_path}")
-    print(f"Configured d_model={d_model}, hidden_dim={hidden_dim}, heads={n_heads}, "
-          f"lstm_hidden_size={lstm_hidden_size}, lstm_layers={lstm_layers}, dropout={dropout}, "
+    print(f"Configured d_model={d_model}, hidden_dim={hidden_dim},\
+          heads={n_heads}, "
+          f"lstm_hidden_size={lstm_hidden_size}, lstm_layers={lstm_layers}, \
+            dropout={dropout}, "
           f"num_quantiles={len(quantiles)}")
 
     # Evaluate
