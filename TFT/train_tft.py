@@ -284,9 +284,9 @@ def main():
     parser.add_argument("--quantiles", type=str, default="0.1,0.5,0.9")
     parser.add_argument("--stride", type=int, default=1)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--early-stopping-patience", type=int, default=7,
+    parser.add_argument("--early-stopping-patience", type=int, default=5,
                         help="Stop if no val loss improvement for N epochs")
-    parser.add_argument("--early-stopping-min-delta", type=float, default=0.0,
+    parser.add_argument("--early-stopping-min-delta", type=float, default=0.5,
                         help="Minimum val loss improvement to reset patience")
     parser.add_argument("--tensorboard", action="store_true",
                         help="Enable TensorBoard logging")

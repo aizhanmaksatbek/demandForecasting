@@ -30,6 +30,8 @@ def run_train_cli(hparams, fixed_epochs):
         "--dropout", str(hparams["dropout"]),
         "--stride", "1",
         "--seed", "42",
+        "--lstm-hidden", str(hparams["lstm_hidden"]),
+        "--lstm-layers", str(hparams["lstm_layers"]),
     ]
     env = os.environ.copy()
     env["PYTHONPATH"] = PROJECT_ROOT + (os.pathsep + env.get("PYTHONPATH", ""))
@@ -71,18 +73,18 @@ def run_train_cli(hparams, fixed_epochs):
 def objective(trial: optuna.Trial):
     # Simple search space (no epoch search)
     hparams = {
-        "enc_len": trial.suggest_categorical("enc_len", [56, 90]),
-        "dec_len": trial.suggest_categorical("dec_len", [15, 28, 60, 90]),
-        "batch_size": trial.suggest_categorical(
-            "batch_size", [256, 512, 1024]
-            ),
-        "lr": trial.suggest_float("lr", 5e-4, 2e-3, log=True),
-        "hidden_dim": trial.suggest_categorical("hidden_dim", [64, 128, 256]),
-        "d_model": trial.suggest_categorical("d_model", [64, 128, 256]),
-        "heads": trial.suggest_categorical("heads", [4, 8, 32, 128]),
-        "dropout": trial.suggest_float("dropout", 0.1, 0.3),
+        "enc_len": trial.suggest_categorical("enc_len", [56]),
+        "dec_len": trial.suggest_categorical("dec_len", [28]),
+        "batch_size": trial.suggest_categorical("batch_size", [2048]),
+        "lr": trial.suggest_float("lr", 1e-3, log=True),
+        "hidden_dim": trial.suggest_categorical("hidden_dim", [64, 256]),
+        "d_model": trial.suggest_categorical("d_model", [128, 256]),
+        "heads": trial.suggest_categorical("heads", [8, 32, 128]),
+        "dropout": trial.suggest_float("dropout", 0.1),
+        "lstm_hidden": trial.suggest_categorical("lstm_hidden", [128]),
+        "lstm_layers": trial.suggest_categorical("lstm_layers", [2]),
     }
-    fixed_epochs = 20
+    fixed_epochs = 1
     wape = run_train_cli(hparams, fixed_epochs=fixed_epochs)
     return wape
 
@@ -115,7 +117,7 @@ def main():
         objective,
         n_trials=args.trials,
         gc_after_trial=True,
-        n_jobs=10
+        n_jobs=args.trials
     )
 
     print("Best WAPE:", study.best_value)
