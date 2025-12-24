@@ -1,37 +1,18 @@
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
+from config.settings import TFT_CHECKPOINTS_DIR
 
 
 def load_forecasts(path: str = None) -> pd.DataFrame:
     if path is None:
-        path = os.path.join("TFT", "checkpoints", "tft_test_forecasts.csv")
+        path = os.path.join(TFT_CHECKPOINTS_DIR, "tft_test_forecasts.csv")
     if not os.path.exists(path):
         raise FileNotFoundError(
             f"Forecasts CSV not found: {path}. Run train_tft.py first."
         )
     # columns: date, store_nbr, family, y_true, y_pred
     return pd.read_csv(path, parse_dates=["date"])
-
-
-def plot_graph(sub, save_dir, title=None, out_file=None):
-    plt.figure(figsize=(10, 4))
-    plt.plot(sub.date, sub.y_true, label="Actual", lw=2)
-    plt.plot(sub.date, sub.y_pred, label="Predicted", lw=2)
-    plt.title(title)
-    plt.xlabel("Date")
-    plt.ylabel("Sales")
-    plt.legend()
-    plt.tight_layout()
-
-    if save_dir is None:
-        save_dir = os.path.join("TFT", "checkpoints")
-    os.makedirs(save_dir, exist_ok=True)
-    out = os.path.join(save_dir, out_file)
-    plt.savefig(out, dpi=720)
-    plt.close()
-    print(f"Saved {out}")
-    return out
 
 
 def plot_store_family(
@@ -52,11 +33,6 @@ def plot_store_family(
     - Forecast segment: uses y_pred, and overlays y_true if available
     - Marks the split with a vertical line at the last past date
     """
-    try:
-        import matplotlib.pyplot as plt
-    except Exception as e:
-        print(f"(install matplotlib) {e}")
-        return None
 
     past_seg = (
         sub.dropna(subset=["y_past"]) if "y_past" in sub else pd.DataFrame()
@@ -108,9 +84,9 @@ def plot_store_family(
     plt.tight_layout()
 
     if save_dir is None:
-        save_dir = os.path.join("TFT", "checkpoints")
+        save_dir = TFT_CHECKPOINTS_DIR
     os.makedirs(save_dir, exist_ok=True)
-    out = os.path.join(save_dir, f"plot_store{store_nbr}_family_{family}.png")
+    out = os.path.join(save_dir, f"plot_store_{store_nbr}_family_{family}.png")
     plt.savefig(out, dpi=150)
     plt.close()
     print(f"Saved {out}")
@@ -214,7 +190,7 @@ def plot_family_aggregate(df: pd.DataFrame, family: str, save_dir: str = None):
     plt.tight_layout()
 
     if save_dir is None:
-        save_dir = os.path.join("TFT", "checkpoints")
+        save_dir = TFT_CHECKPOINTS_DIR
     os.makedirs(save_dir, exist_ok=True)
     out = os.path.join(save_dir, f"plot_family_{family}_aggregate.png")
     plt.savefig(out, dpi=150)
@@ -313,7 +289,7 @@ def plot_family_all_stores(
     fig.tight_layout(rect=[0, 0, 1, 0.95])
 
     if save_dir is None:
-        save_dir = os.path.join("TFT", "checkpoints")
+        save_dir = TFT_CHECKPOINTS_DIR
     os.makedirs(save_dir, exist_ok=True)
     out = os.path.join(save_dir, f"plot_family_{family}_all_stores.png")
     fig.savefig(out, dpi=720)

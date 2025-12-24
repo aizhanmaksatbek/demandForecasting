@@ -1,15 +1,41 @@
-# Variables for TFT model
+import os
+
+
+"""Configuration settings for TFT model."""
+# WORKING_DIR = "/kaggle/input/demandForecasting"
+WORKING_DIR = ""
+TFT_CHECKPOINTS_DIR = os.path.join(WORKING_DIR, "TFT", "checkpoints")
+
 # encoder features
-enc_vars = [
-    "sales", "transactions", "dcoilwtico", "onpromotion",
-    "dow", "month", "weekofyear", "is_holiday", "is_workday",
+ENC_VARS = [
+    "sales",
+    "transactions",
+    "dcoilwtico",
+    "onpromotion",
+    "dow",
+    "month",
+    "weekofyear",
+    "is_holiday",
+    "is_workday"
 ]
 # known future features
-dec_vars = [
-    "onpromotion", "dow", "month", "weekofyear",
-    "is_holiday", "is_workday",
+DEC_VARS = [
+    "onpromotion",
+    "dow",
+    "month",
+    "weekofyear",
+    "is_holiday",
+    "is_workday"
 ]
 # static features
-static_cols = ["store_nbr", "family", "state", "cluster"]
+STATIC_COLS = [
+    "store_nbr",
+    "family",
+    "state",
+    "cluster"
+    ]
 
-reals_to_scale = ["transactions", "dcoilwtico"]
+REALS_TO_SCALE = [
+    "transactions",
+    "dcoilwtico"
+    ]
