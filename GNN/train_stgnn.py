@@ -1,6 +1,5 @@
 import argparse
 import os
-import random
 import numpy as np
 import pandas as pd
 import torch
@@ -8,28 +7,10 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from graph_dataset import GraphDemandDataset
 from architecture.stgnn import STGNN, QuantileLoss
-from torch.utils.tensorboard import SummaryWriter
-
-
-def set_seed(seed: int = 42):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-
-
-def mae(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    return float(np.abs(y_true - y_pred).mean())
-
-
-def wape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    denom = np.abs(y_true).sum() + 1e-8
-    return float(np.abs(y_true - y_pred).sum() / denom)
-
-
-def smape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    denom = (np.abs(y_true) + np.abs(y_pred)) + 1e-8
-    return float((2.0 * np.abs(y_true - y_pred) / denom).mean())
+from utils.utils import set_seed, compute_metrics
+from config.settings import ENC_VARS as feature_cols
+from utils.utils import get_date_splits
+from config.settings import REALS_TO_SCALE as reals
 
 
 def main():
@@ -45,25 +26,11 @@ def main():
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--quantiles", type=str, default="0.1,0.5,0.9")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--tensorboard", action="store_true",
-                        help="Enable TensorBoard logging"
-                        )
-    parser.add_argument(
-        "--log-dir",
-        type=str,
-        default=os.path.join("GNN", "logs"),
-        help="Directory to store TensorBoard logs",
-    )
     args = parser.parse_args()
 
     set_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     os.makedirs(os.path.join("GNN", "checkpoints"), exist_ok=True)
-    if args.tensorboard:
-        os.makedirs(args.log_dir, exist_ok=True)
-        writer = SummaryWriter(log_dir=args.log_dir)
-    else:
-        writer = None
 
     panel_csv = os.path.join("GNN", "data", "panel.csv")
     node_index_csv = os.path.join("GNN", "data", "node_index.csv")
@@ -77,23 +44,9 @@ def main():
 
     # Determine split dates based on panel
     df = pd.read_csv(panel_csv, parse_dates=["date"])
-    max_date = df["date"].max()
-    test_days = pd.Timedelta(days=args.horizon)
-    val_days = pd.Timedelta(days=args.horizon)
-    test_end = max_date
-    val_end = test_end - test_days
-    train_end = val_end - val_days
+    train_end, val_end, test_end = get_date_splits(df, args.horizon)
     split_bounds = (train_end, val_end, test_end)
 
-    # Features (past covariates)
-    feature_cols = ["sales", "transactions", "dcoilwtico", "onpromotion",
-                    "dow", "month", "weekofyear", "is_holiday", "is_workday"
-                    ]
-
-    # Optionally scale continuous features on train period only
-    # We scale later inside dataset pivoting by passing scaled panel,
-    #   but for simplicity we scale panel in place
-    reals = ["transactions", "dcoilwtico"]
     scaler = None
     if len(reals) > 0:
         scaler = {}
@@ -163,6 +116,7 @@ def main():
     for epoch in range(1, args.epochs + 1):
         model.train()
         train_loss = 0.0
+        train_t, train_pred = [], []
         pbar = tqdm(train_loader, desc=f"Epoch {epoch}/{args.epochs} [train]")
         for batch in pbar:
             x = batch["x_hist"].to(device)  # [B, L_enc, N, F]
@@ -175,14 +129,17 @@ def main():
             optimizer.step()
             train_loss += loss.item() * x.size(0)
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
+            train_t.append(y.detach().cpu().numpy())
+            train_pred.append(yhat.detach().cpu().numpy())
         train_loss /= max(len(train_ds), 1)
-
-        if writer is not None:
-            writer.add_scalar("loss/train", train_loss, epoch)
+        train_metrics = compute_metrics(train_t, train_pred)
+        print(f"Train Epoch {epoch} Loss: {train_loss:.6f} |\
+              Metrics: {train_metrics}")
 
         # Validation
         model.eval()
         val_loss = 0.0
+        val_t, val_pred = [], []
         with torch.no_grad():
             for batch in val_loader:
                 x = batch["x_hist"].to(device)
@@ -190,12 +147,13 @@ def main():
                 yhat = model(x)
                 loss = criterion(yhat.to(device), y)
                 val_loss += loss.item() * x.size(0)
+                val_t.append(y.detach().cpu().numpy())
+                val_pred.append(yhat.detach().cpu().numpy())
         val_loss /= max(len(val_ds), 1)
-        print(f"Epoch {epoch}: train_pinball={train_loss:.5f} \
-              | val_pinball={val_loss:.5f}"
+        val_metrics = compute_metrics(val_t, val_pred)
+        print(f"Validation Epoch {epoch}: Loss {val_loss:.6f} \
+              | Metrics: {val_metrics:.6f}"
               )
-        if writer is not None:
-            writer.add_scalar("loss/val", val_loss, epoch)
 
         if val_loss < best_val:
             best_val = val_loss
@@ -207,44 +165,34 @@ def main():
             )
             print(f"Saved best model to {best_path}")
 
-    if writer is not None:
-        writer.flush()
-        writer.close()
-
     # Load best and evaluate
     if os.path.exists(best_path):
         ckpt = torch.load(best_path, map_location=device)
         model.load_state_dict(ckpt["model_state"])
-        print(f"Loaded best model (val pinball: {best_val:.5f})")
+        print(f"Loaded best model loss: {best_val:.5f})")
 
-    def evaluate(data_loader):
-        total_loss = 0.0
-        ys, preds = [], []
+    def evaluate(test_loader):
+        test_loss = 0.0
+        test_t, test_pred = [], []
         with torch.no_grad():
-            for batch in data_loader:
+            for batch in test_loader:
                 x = batch["x_hist"].to(device)
                 y = batch["y_fut"].to(device)
-                yhat = model(x)  # [B,H,N,Q]
-                total_loss += criterion(yhat.to(device), y).item() * x.size(0)
-                # median quantile
-                median_idx = int(np.argmin([abs(q - 0.5) for q in quantiles]))
-                yhat_med = yhat[..., median_idx]  # [B,H,N]
-                ys.append(y.cpu().numpy())
-                preds.append(yhat_med.cpu().numpy())
-        pinball = total_loss / max(len(data_loader.dataset), 1)
-        ys = np.concatenate(ys, axis=0)      # [M,H,N]
-        preds = np.concatenate(preds, axis=0)
-        # Flatten for metrics
-        y_flat = ys.reshape(-1)
-        p_flat = preds.reshape(-1)
-        return pinball, wape(y_flat, p_flat), smape(y_flat, p_flat)
+                pred = model(x)  # [B,H,N,Q]
+                loss = criterion(pred.to(device), y)
+                test_loss += loss.item() * x.size(0)
+                test_t.append(y.detach().cpu().numpy())
+                test_pred.append(pred.detach().cpu().numpy())
+        test_loss = test_loss / max(len(test_loader.dataset), 1)
+        test_metrics = compute_metrics(test_t, test_pred)
+        print(f"Test Loss: {test_loss:.6f} | Metrics: {test_metrics}")
 
-    val_pin, val_w, val_s = evaluate(val_loader)
-    test_pin, test_w, test_s = evaluate(test_loader)
-    print(f"Validation - Pinball: {val_pin:.5f} \
-           | WAPE: {val_w:.5f} | sMAPE: {val_s:.5f}")
-    print(f"Test       - Pinball: {test_pin:.5f} \
-          | WAPE: {test_w:.5f} | sMAPE: {test_s:.5f}")
+        return test_metrics["wape"]
+
+    val_wape = evaluate(val_loader)
+    test_w = evaluate(test_loader)
+    print(f"Validation WAPE: {val_wape:.5f}")
+    print(f"Test WAPE: {test_w:.5f}")
 
 
 if __name__ == "__main__":
