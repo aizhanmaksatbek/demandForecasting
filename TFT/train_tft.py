@@ -97,6 +97,7 @@ def train_model(model, quantiles, args, train_loader, val_loader,
                 train_len, val_len
                 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
     tensorboard_writer = TensorboardConfig(
         store_flag=args.tensorboard, log_dir=args.log_dir
     )
@@ -202,6 +203,7 @@ def train_model(model, quantiles, args, train_loader, val_loader,
 # Evaluation on test set
 def eval_loader(model, data_loader, quantiles, test_len):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
     median_idx = int(np.argmin([abs(q - 0.5) for q in quantiles]))
     # Load saved TFT model and evaluate on test set
     best_path = os.path.join("TFT", "checkpoints", "tft_best.pt")
