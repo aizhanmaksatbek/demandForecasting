@@ -1,10 +1,8 @@
 import os
 import pandas as pd
+from config.settings import RAW, TFT_OUT_DIR
 
-
-RAW = "data_raw/"
-OUT_DIR = "TFT/data/"
-os.makedirs(OUT_DIR, exist_ok=True)
+os.makedirs(TFT_OUT_DIR, exist_ok=True)
 
 
 def load_csv(name, parse_dates=None):
@@ -95,7 +93,7 @@ def preprocess():
     df[num_cols] = df[num_cols].astype("float32")
 
     df = df.sort_values(["store_nbr", "family", "date"])
-    out = os.path.join(OUT_DIR, "panel.csv")
+    out = os.path.join(TFT_OUT_DIR, "panel.csv")
     df.to_csv(out, index=False)
     print(f"Wrote {out} shape={df.shape}")
 
