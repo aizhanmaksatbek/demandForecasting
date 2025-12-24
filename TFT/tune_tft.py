@@ -114,7 +114,8 @@ def main():
     study.optimize(
         objective,
         n_trials=args.trials,
-        gc_after_trial=True
+        gc_after_trial=True,
+        n_jobs=10
     )
 
     print("Best WAPE:", study.best_value)
