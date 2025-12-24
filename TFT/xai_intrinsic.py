@@ -8,11 +8,12 @@ from torch.utils.data import DataLoader
 from tft_dataset import TFTWindowDataset, tft_collate
 from architecture.tft import TemporalFusionTransformer
 from utils.utils import build_onehot_maps
-from config.settings import enc_vars, dec_vars, static_cols
+from config.settings import ENC_VARS, DEC_VARS, STATIC_COLS
 from utils.utils import get_date_splits
+from config.settings import TFT_CHECKPOINTS_DIR, TFT_DATA_DIR
 
 
-out_dir = os.path.join("TFT", "checkpoints")
+out_dir = TFT_CHECKPOINTS_DIR
 
 
 def extract_tft_intrinsic(model, batch, device):
@@ -192,7 +193,7 @@ def plot_input_set(
                 ax.set_title("Static Variable Importance (avg)")
                 ax.set_xticks(x)
                 ax.set_xticklabels(
-                    static_cols,
+                    STATIC_COLS,
                     rotation=45, ha="right"
                     )
                 ax.set_ylabel("Importance")
@@ -213,20 +214,20 @@ def plot_input_set(
 
 def save_variable_imp():
     # Plot encoder/decoder/static VSN importance if saved
-    enc_path = os.path.join("TFT", "checkpoints", "xai_vsn_enc.npy")
-    dec_path = os.path.join("TFT", "checkpoints", "xai_vsn_dec.npy")
-    stat_path = os.path.join("TFT", "checkpoints", "xai_vsn_static.npy")
+    enc_path = os.path.join(TFT_CHECKPOINTS_DIR, "xai_vsn_enc.npy")
+    dec_path = os.path.join(TFT_CHECKPOINTS_DIR, "xai_vsn_dec.npy")
+    stat_path = os.path.join(TFT_CHECKPOINTS_DIR, "xai_vsn_static.npy")
     plots = []
     if os.path.exists(enc_path):
         enc_imp = np.load(enc_path)  # [V_enc]
-        plots.append(("Encoder Variable Importance (avg)", enc_vars, enc_imp))
+        plots.append(("Encoder Variable Importance (avg)", ENC_VARS, enc_imp))
     if os.path.exists(dec_path):
         dec_imp = np.load(dec_path)  # [V_dec]
-        plots.append(("Decoder Variable Importance (avg)", dec_vars, dec_imp))
+        plots.append(("Decoder Variable Importance (avg)", DEC_VARS, dec_imp))
     if os.path.exists(stat_path):
         stat_imp = np.load(stat_path)  # [V_static]
         plots.append(
-            ("Static Variable Importance (avg)", static_cols, stat_imp)
+            ("Static Variable Importance (avg)", STATIC_COLS, stat_imp)
         )
 
     if len(plots) > 0:
@@ -268,17 +269,18 @@ def run_tft_intrinsic_once(enc_len=56, dec_len=28, stride=1,
     os.makedirs(out_dir, exist_ok=True)
 
     # Load panel
-    panel_path = os.path.join("TFT", "data", "panel.csv")
+    panel_path = os.path.join(TFT_DATA_DIR, "panel.csv")
+    print(f"Loading panel data from {panel_path}...")
     assert os.path.exists(panel_path), "Run data preprocessing first."
     df = pd.read_csv(panel_path, parse_dates=["date"])
 
     train_end, val_end, test_end = get_date_splits(df, dec_len)
     split_bounds = (train_end, val_end, test_end)
 
-    static_maps = build_onehot_maps(df, static_cols)
+    static_maps = build_onehot_maps(df, STATIC_COLS)
 
     test_ds = TFTWindowDataset(
-        df, enc_len, dec_len, enc_vars, dec_vars, static_cols,
+        df, enc_len, dec_len, ENC_VARS, DEC_VARS, STATIC_COLS,
         split_bounds, split="test", stride=stride,
         static_onehot_maps=static_maps,
     )
@@ -289,9 +291,9 @@ def run_tft_intrinsic_once(enc_len=56, dec_len=28, stride=1,
 
     # Model definition must match training config for shapes;
     # we only need forward for XAI
-    past_input_dims = [1] * len(enc_vars)
-    future_input_dims = [1] * len(dec_vars)
-    static_input_dims = [len(static_maps[c]) for c in static_cols]
+    past_input_dims = [1] * len(ENC_VARS)
+    future_input_dims = [1] * len(DEC_VARS)
+    static_input_dims = [len(static_maps[c]) for c in STATIC_COLS]
     model = TemporalFusionTransformer(
         static_input_dims=static_input_dims,
         past_input_dims=past_input_dims,
@@ -315,7 +317,7 @@ def run_tft_intrinsic_once(enc_len=56, dec_len=28, stride=1,
     # Plot the input set used for inference (with forecast overlay)
     try:
         for batch in test_loader:
-            plot_input_set(model, batch, 1, enc_vars, dec_vars, device)
+            plot_input_set(model, batch, 1, ENC_VARS, DEC_VARS, device)
 
     except Exception as e:
         print(f"Could not save input set plot: {e}")

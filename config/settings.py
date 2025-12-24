@@ -6,7 +6,7 @@ import os
 WORKING_DIR = ""
 TFT_CHECKPOINTS_DIR = os.path.join(WORKING_DIR, "TFT", "checkpoints")
 RAW = f"{WORKING_DIR}/data_raw/"
-TFT_OUT_DIR = f"{WORKING_DIR}/TFT/data/"
+TFT_DATA_DIR = f"{WORKING_DIR}TFT/data"
 
 # encoder features
 ENC_VARS = [

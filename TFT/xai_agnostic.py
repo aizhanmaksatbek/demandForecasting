@@ -6,7 +6,8 @@ import torch
 from torch.utils.data import DataLoader
 from architecture.tft import TemporalFusionTransformer
 from tft_dataset import TFTWindowDataset, tft_collate
-from config.settings import enc_vars, dec_vars, static_cols
+from config.settings import ENC_VARS, DEC_VARS, STATIC_COLS
+from config.settings import TFT_DATA_DIR, TFT_CHECKPOINTS_DIR
 
 
 def wape_loader(model, loader, device, quantiles=(0.1, 0.5, 0.9)):
@@ -78,7 +79,7 @@ def perm_importance(model, loader, device, feature_space: str, var_idx: int,
 
 
 def build_test_loader(enc_len=56, dec_len=28, stride=1):
-    panel_path = os.path.join("TFT", "data", "panel.csv")
+    panel_path = os.path.join(TFT_DATA_DIR, "panel.csv")
     assert os.path.exists(panel_path), "Missing TFT/data/panel.csv"
     df = pd.read_csv(panel_path, parse_dates=["date"])
     max_date = df["date"].max()
@@ -92,7 +93,7 @@ def build_test_loader(enc_len=56, dec_len=28, stride=1):
     # one-hot maps for static and dims per static var
     maps = {}
     static_dims = []
-    for c in static_cols:
+    for c in STATIC_COLS:
         cats = sorted(df[c].dropna().unique().tolist())
         idx = {v: i for i, v in enumerate(cats)}
         dim = len(cats)
@@ -103,14 +104,14 @@ def build_test_loader(enc_len=56, dec_len=28, stride=1):
             maps[c][v] = eye[idx[v]]
 
     test_ds = TFTWindowDataset(
-        df, enc_len, dec_len, enc_vars, dec_vars, static_cols,
+        df, enc_len, dec_len, ENC_VARS, DEC_VARS, STATIC_COLS,
         split_bounds, split="test", stride=stride, static_onehot_maps=maps,
     )
     test_loader = DataLoader(test_ds, batch_size=64, shuffle=False,
                              num_workers=0, pin_memory=True,
                              collate_fn=tft_collate
                              )
-    return test_loader, enc_vars, dec_vars, static_cols, static_dims
+    return test_loader, ENC_VARS, DEC_VARS, STATIC_COLS, static_dims
 
 
 def build_model(enc_vars, dec_vars, static_cols, static_dims,
@@ -144,7 +145,7 @@ def build_model(enc_vars, dec_vars, static_cols, static_dims,
 
 
 def run_permutation_suite(device: torch.device | None = None):
-    out_dir = os.path.join("TFT", "checkpoints")
+    out_dir = TFT_CHECKPOINTS_DIR
     os.makedirs(out_dir, exist_ok=True)
 
     test_loader, enc_vars, dec_vars, static_cols, static_dims = (
@@ -158,7 +159,7 @@ def run_permutation_suite(device: torch.device | None = None):
         static_cols,
         static_dims,
         checkpoint_path=os.path.join(
-            "TFT", "checkpoints", "tft_best_train_final.pt"
+            TFT_CHECKPOINTS_DIR, "tft_best_train_final.pt"
             )
         )
 

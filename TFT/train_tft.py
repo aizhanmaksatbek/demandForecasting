@@ -1,6 +1,5 @@
 import argparse
 import os
-import sys
 import numpy as np
 import pandas as pd
 import torch
@@ -11,12 +10,9 @@ from TFT.architecture.tft import TemporalFusionTransformer, QuantileLoss
 from TFT.tft_dataset import TFTWindowDataset, tft_collate
 from utils.utils import set_seed, build_onehot_maps
 from utils.utils import compute_metrics, write_metrics_to_tensorboard
-from config.settings import enc_vars, dec_vars, static_cols, reals_to_scale
+from config.settings import ENC_VARS, DEC_VARS, STATIC_COLS, REALS_TO_SCALE
+from config.settings import TFT_CHECKPOINTS_DIR, TFT_DATA_DIR, WORKING_DIR
 from utils.utils import TensorboardConfig, get_date_splits
-
-# Add src to path
-CUR_DIR = os.path.dirname(__file__)
-sys.path.append(os.path.join(CUR_DIR, ".."))
 
 
 def save_results_csv(rows):
@@ -26,7 +22,7 @@ def save_results_csv(rows):
             .sort_values(["family", "store_nbr", "date"])
         )
         out_csv = os.path.join(
-            "TFT", "checkpoints", "tft_test_forecasts.csv"
+            TFT_CHECKPOINTS_DIR, "tft_test_forecasts.csv"
         )
         test_forecasts_df.to_csv(out_csv, index=False)
         print(f"Saved test forecasts CSV -> {out_csv}")
@@ -34,7 +30,7 @@ def save_results_csv(rows):
 
 def get_data_split(dec_len, enc_len, batch_size, stride):
     # Load data
-    panel_path = os.path.join("TFT", "data", "panel.csv")
+    panel_path = os.path.join(TFT_DATA_DIR, "panel.csv")
     assert os.path.exists(panel_path), (
         "Run data preprocessing first: "
         "python src/data/preprocess_favorita.py"
@@ -46,31 +42,31 @@ def get_data_split(dec_len, enc_len, batch_size, stride):
 
     scaler = StandardScaler()
     train_mask = df["date"] <= train_end
-    df.loc[train_mask, reals_to_scale] = scaler.fit_transform(
-        df.loc[train_mask, reals_to_scale]
+    df.loc[train_mask, REALS_TO_SCALE] = scaler.fit_transform(
+        df.loc[train_mask, REALS_TO_SCALE]
     )
-    df.loc[~train_mask, reals_to_scale] = scaler.transform(
-        df.loc[~train_mask, reals_to_scale]
+    df.loc[~train_mask, REALS_TO_SCALE] = scaler.transform(
+        df.loc[~train_mask, REALS_TO_SCALE]
     )
 
     # One-hot maps for static features
-    static_maps = build_onehot_maps(df, static_cols)
-    static_dims = [len(static_maps[c]) for c in static_cols]
+    static_maps = build_onehot_maps(df, STATIC_COLS)
+    static_dims = [len(static_maps[c]) for c in STATIC_COLS]
 
     # Dataset and loaders
     split_bounds = (train_end, val_end, test_end)
     train_ds = TFTWindowDataset(
-        df, enc_len, dec_len, enc_vars, dec_vars, static_cols,
+        df, enc_len, dec_len, ENC_VARS, DEC_VARS, STATIC_COLS,
         split_bounds, split="train", stride=stride,
         static_onehot_maps=static_maps,
     )
     val_ds = TFTWindowDataset(
-        df, enc_len, dec_len, enc_vars, dec_vars, static_cols,
+        df, enc_len, dec_len, ENC_VARS, DEC_VARS, STATIC_COLS,
         split_bounds, split="val", stride=stride,
         static_onehot_maps=static_maps,
     )
     test_ds = TFTWindowDataset(
-        df, enc_len, dec_len, enc_vars, dec_vars, static_cols,
+        df, enc_len, dec_len, ENC_VARS, DEC_VARS, STATIC_COLS,
         split_bounds, split="test", stride=stride,
         static_onehot_maps=static_maps,
     )
@@ -109,7 +105,7 @@ def train_model(model, quantiles, args, train_loader, val_loader,
         model.parameters(), lr=args.lr, weight_decay=1e-5
     )
     best_val = float("inf")
-    best_path = os.path.join("TFT", "checkpoints", "tft_best.pt")
+    best_path = os.path.join(TFT_CHECKPOINTS_DIR, "tft_best.pt")
     median_idx = int(np.argmin([abs(q - 0.5) for q in quantiles]))
     # Early stopping state
     patience = int(getattr(args, "early_stopping_patience", 7))
@@ -252,7 +248,7 @@ def eval_loader(model, data_loader, quantiles, test_len):
                 # Append encoder history (past sales) before
                 #   forecast horizon
                 # Use the 'sales' feature from encoder inputs
-                sales_idx = enc_vars.index("sales")
+                sales_idx = ENC_VARS.index("sales")
                 past_dates = meta["past_dates"]
                 for d_idx, date in enumerate(past_dates):
                     rows.append(
@@ -295,14 +291,14 @@ def main():
     parser.add_argument("--tensorboard", action="store_true",
                         help="Enable TensorBoard logging")
     parser.add_argument("--log-dir", type=str,
-                        default=os.path.join("TFT", "logs"),
+                        default=os.path.join(WORKING_DIR, "TFT", "logs"),
                         help="Directory to store TensorBoard logs")
     parser.add_argument("--train-flag", type=bool, default=True)
     args = parser.parse_args()
 
     set_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    os.makedirs(os.path.join("TFT", "checkpoints"), exist_ok=True)
+    os.makedirs(TFT_CHECKPOINTS_DIR, exist_ok=True)
 
     (
         train_loader,
@@ -320,8 +316,8 @@ def main():
         )
 
     # Model
-    past_input_dims = [1] * len(enc_vars)
-    future_input_dims = [1] * len(dec_vars)
+    past_input_dims = [1] * len(ENC_VARS)
+    future_input_dims = [1] * len(DEC_VARS)
     static_input_dims = static_dims
     quantiles = [float(x) for x in args.quantiles.split(",")]
 
