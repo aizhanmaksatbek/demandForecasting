@@ -78,6 +78,7 @@ def train_gnn_model(model, train_loader, val_loader, criterion, optimizer,
     tensorboardpanel = TensorboardConfig(True, GNN_LOG_DIR)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     best_val = float("inf")
+    epochs_no_improve = 0
     for epoch in range(1, args.epochs + 1):
         model.train()
         train_loss = 0.0
@@ -123,11 +124,12 @@ def train_gnn_model(model, train_loader, val_loader, criterion, optimizer,
         val_metrics = compute_metrics(val_t, val_pred)
         tensorboardpanel.write("val_loss", val_loss, epoch)
         print(f"Validation Epoch {epoch}: Loss {val_loss:.6f} \
-              | Metrics: {val_metrics:.6f}"
+              | Metrics: {val_metrics}"
               )
 
         if val_loss < best_val:
             best_val = val_loss
+            epochs_no_improve = 0
             torch.save(
                 {"model_state": model.state_dict(),
                  "cfg": vars(args),
@@ -135,6 +137,11 @@ def train_gnn_model(model, train_loader, val_loader, criterion, optimizer,
                 best_path,
             )
             print(f"Saved best model to {best_path}")
+        else:
+            epochs_no_improve += 1
+            if epochs_no_improve >= args.patience:
+                print(f"Early stopping triggered at epoch {epoch}")
+                break
     tensorboardpanel.close()
 
 
@@ -180,6 +187,7 @@ def main():
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--quantiles", type=str, default="0.1,0.5,0.9")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--patience", type=int, default=10)
     args = parser.parse_args()
 
     set_seed(args.seed)
