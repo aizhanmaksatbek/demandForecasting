@@ -11,9 +11,12 @@ from utils.utils import set_seed, compute_metrics
 from config.settings import ENC_VARS as feature_cols
 from utils.utils import get_date_splits
 from config.settings import REALS_TO_SCALE as reals
+from utils.utils import TensorboardConfig
+
 
 GNN_CHECKPOINTS_PATH = "GNN/checkpoints"
 GNN_DATA_PATH = "GNN/data"
+GNN_LOG_DIR = "GNN/logs"
 
 
 def get_gnn_data_splits(args):
@@ -72,6 +75,7 @@ def get_gnn_data_splits(args):
 def train_gnn_model(model, train_loader, val_loader, criterion, optimizer,
                     args, best_path, quantiles):
     # Training
+    tensorboardpanel = TensorboardConfig(True, GNN_LOG_DIR)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     best_val = float("inf")
     for epoch in range(1, args.epochs + 1):
@@ -96,6 +100,7 @@ def train_gnn_model(model, train_loader, val_loader, criterion, optimizer,
             train_pred.append(pred_med.detach().cpu().numpy())
         train_loss /= max(len(train_loader.dataset), 1)
         train_metrics = compute_metrics(train_t, train_pred)
+        tensorboardpanel.write("train_loss", train_loss, epoch)
         print(f"Train Epoch {epoch} Loss: {train_loss:.6f} |\
               Metrics: {train_metrics}")
 
@@ -116,6 +121,7 @@ def train_gnn_model(model, train_loader, val_loader, criterion, optimizer,
                 val_pred.append(pred_med.detach().cpu().numpy())
         val_loss /= max(len(val_loader.dataset), 1)
         val_metrics = compute_metrics(val_t, val_pred)
+        tensorboardpanel.write("val_loss", val_loss, epoch)
         print(f"Validation Epoch {epoch}: Loss {val_loss:.6f} \
               | Metrics: {val_metrics:.6f}"
               )
@@ -129,6 +135,7 @@ def train_gnn_model(model, train_loader, val_loader, criterion, optimizer,
                 best_path,
             )
             print(f"Saved best model to {best_path}")
+    tensorboardpanel.close()
 
 
 def eval_gnn_model(model, test_loader, criterion, best_path, quantiles):
