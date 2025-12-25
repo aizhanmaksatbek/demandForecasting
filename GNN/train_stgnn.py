@@ -91,7 +91,9 @@ def train_gnn_model(model, train_loader, val_loader, criterion, optimizer,
             train_loss += loss.item() * x.size(0)
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
             train_t.append(y.detach().cpu().numpy())
-            train_pred.append(yhat.detach().cpu().numpy())
+            median_idx = int(np.argmin([abs(q - 0.5) for q in quantiles]))
+            pred_med = yhat[..., median_idx]  # [B,H,N]
+            train_pred.append(pred_med.detach().cpu().numpy())
         train_loss /= max(len(train_loader.dataset), 1)
         train_metrics = compute_metrics(train_t, train_pred)
         print(f"Train Epoch {epoch} Loss: {train_loss:.6f} |\
@@ -109,7 +111,9 @@ def train_gnn_model(model, train_loader, val_loader, criterion, optimizer,
                 loss = criterion(yhat.to(device), y)
                 val_loss += loss.item() * x.size(0)
                 val_t.append(y.detach().cpu().numpy())
-                val_pred.append(yhat.detach().cpu().numpy())
+                median_idx = int(np.argmin([abs(q - 0.5) for q in quantiles]))
+                pred_med = yhat[..., median_idx]  # [B,H,N]
+                val_pred.append(pred_med.detach().cpu().numpy())
         val_loss /= max(len(val_loader.dataset), 1)
         val_metrics = compute_metrics(val_t, val_pred)
         print(f"Validation Epoch {epoch}: Loss {val_loss:.6f} \
@@ -127,9 +131,10 @@ def train_gnn_model(model, train_loader, val_loader, criterion, optimizer,
             print(f"Saved best model to {best_path}")
 
 
-def eval_gnn_model(model, test_loader, criterion, best_path):
+def eval_gnn_model(model, test_loader, criterion, best_path, quantiles):
     # Load best and evaluate
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     if os.path.exists(best_path):
         ckpt = torch.load(best_path, map_location=device)
         model.load_state_dict(ckpt["model_state"])
@@ -145,7 +150,9 @@ def eval_gnn_model(model, test_loader, criterion, best_path):
             loss = criterion(pred.to(device), y)
             test_loss += loss.item() * x.size(0)
             test_t.append(y.detach().cpu().numpy())
-            test_pred.append(pred.detach().cpu().numpy())
+            median_idx = int(np.argmin([abs(q - 0.5) for q in quantiles]))
+            pred_med = pred[..., median_idx]  # [B,H,N]
+            test_pred.append(pred_med.detach().cpu().numpy())
     test_loss = test_loss / max(len(test_loader.dataset), 1)
     test_metrics = compute_metrics(test_t, test_pred)
     print(f"Test Loss: {test_loss:.6f} | Metrics: {test_metrics}")
@@ -157,7 +164,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--enc-len", type=int, default=56)
     parser.add_argument("--horizon", type=int, default=28)
-    parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--hidden", type=int, default=64)
@@ -206,7 +213,9 @@ def main():
     train_gnn_model(model, train_loader, val_loader, criterion, optimizer,
                     args, best_model_path, quantiles
                     )
-    eval_gnn_model(model, test_loader, criterion, best_model_path)
+    quantiles = [float(x) for x in args.quantiles.split(",")]
+
+    eval_gnn_model(model, test_loader, criterion, best_model_path, quantiles)
 
 
 if __name__ == "__main__":
