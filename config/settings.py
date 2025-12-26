@@ -41,3 +41,8 @@ REALS_TO_SCALE = [
     "transactions",
     "dcoilwtico"
     ]
+
+# GNN variables
+GNN_CHECKPOINTS_PATH = "GNN/checkpoints"
+GNN_DATA_PATH = "GNN/data"
+GNN_LOG_DIR = "GNN/logs"

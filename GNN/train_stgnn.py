@@ -12,11 +12,7 @@ from config.settings import ENC_VARS as feature_cols
 from utils.utils import get_date_splits
 from config.settings import REALS_TO_SCALE as reals
 from utils.utils import TensorboardConfig
-
-
-GNN_CHECKPOINTS_PATH = "GNN/checkpoints"
-GNN_DATA_PATH = "GNN/data"
-GNN_LOG_DIR = "GNN/logs"
+from config.settings import GNN_CHECKPOINTS_PATH, GNN_DATA_PATH, GNN_LOG_DIR
 
 
 def get_gnn_data_splits(args):
