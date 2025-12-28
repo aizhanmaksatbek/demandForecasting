@@ -108,7 +108,7 @@ def run_custom_edge_explainer_for_node(
     m_final = (torch.sigmoid(alpha) * nb_mask).detach().cpu().numpy()
     np.save(
         os.path.join(
-            out_dir, f"xai_custom_neighbor_mask_node{target_idx}.npy"
+            out_dir, f"gnn_node_{target_idx}_mask_.npy"
             ),
         m_final)
 
@@ -149,6 +149,33 @@ def save_neighbor_importances_csv(
     return csv_path
 
 
+def save_least_important_neighbors_csv(
+    mask_path: str,
+    node_index_csv: str,
+    target_node: int,
+    out_dir: str,
+    bottom_k: int = 20,
+):
+    """
+    Save the least important neighbors (lowest mask values) to a CSV file.
+    """
+    import pandas as pd
+    os.makedirs(out_dir, exist_ok=True)
+    m = np.load(mask_path)
+    node_map = pd.read_csv(node_index_csv)
+    node_map = node_map.drop_duplicates("node_id").set_index("node_id")
+    idxs = np.argsort(m)[:bottom_k]
+    rows = []
+    for nid in idxs:
+        meta = node_map.loc[nid].to_dict() if nid in node_map.index else {}
+        rows.append({"neighbor_node_id": int(nid), "importance": float(m[nid]), **meta})
+    df = pd.DataFrame(rows)
+    csv_path = os.path.join(out_dir, f"xai_custom_bottom{bottom_k}_neighbors_node{target_node}.csv")
+    df.to_csv(csv_path, index=False)
+    print(f"[CustomExplainer] Saved labeled bottom-{bottom_k} CSV -> {csv_path}")
+    return csv_path
+
+
 def save_neighbor_importances_plot(
     mask_path: str,
     node_index_csv: str,
@@ -177,6 +204,40 @@ def save_neighbor_importances_plot(
     plt.title(f"Top-{top_k} neighbors for target node {target_node}")
     plt.tight_layout()
     png_path = os.path.join(out_dir, f"GNN_node_{target_node}_neighbors.png")
+    plt.savefig(png_path, dpi=150)
+    plt.close()
+    print(f"[CustomExplainer] Saved plot -> {png_path}")
+    return png_path
+
+
+def save_least_important_neighbors_plot(
+    mask_path: str,
+    node_index_csv: str,
+    target_node: int,
+    out_dir: str,
+    bottom_k: int = 20,
+):
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    os.makedirs(out_dir, exist_ok=True)
+    m = np.load(mask_path)
+    node_map = pd.read_csv(node_index_csv)
+    node_map = node_map.drop_duplicates("node_id").set_index("node_id")
+    idxs = np.argsort(m)[:bottom_k]
+    labels = []
+    vals = []
+    for nid in idxs:
+        meta = node_map.loc[nid] if nid in node_map.index else None
+        label = (f"id={nid}, store={meta['store_nbr']}, {meta['family']}")
+        labels.append(label)
+        vals.append(m[nid])
+    plt.figure(figsize=(10, 6))
+    plt.bar(range(len(vals)), vals)
+    plt.xticks(range(len(labels)), labels, rotation=45, ha='right')
+    plt.ylabel("Neighbor importance")
+    plt.title(f"Bottom-{bottom_k} neighbors for target node {target_node}")
+    plt.tight_layout()
+    png_path = os.path.join(out_dir, f"GNN_node_{target_node}_bottom_neighbors.png")
     plt.savefig(png_path, dpi=150)
     plt.close()
     print(f"[CustomExplainer] Saved plot -> {png_path}")
@@ -253,29 +314,42 @@ def main():
         num_workers=4, pin_memory=True
         )
     criterion = QuantileLoss(quantiles=quantiles)
-    eval_gnn_model(model, test_loader, criterion, args.ckpt, quantiles)
+    # eval_gnn_model(model, test_loader, criterion, args.ckpt, quantiles)
 
     # GNN Explainer
     stats = run_custom_edge_explainer_for_node(
         stgnn=model, x_hist=x_hist, target_idx=args.target_node,
-        steps=200, lr=0.1, l1_coeff=5e-3, ent_coeff=1e-3,
+        steps=20, lr=0.1, l1_coeff=5e-3, ent_coeff=1e-3,
         out_dir=args.out_dir,
     )
     print({"explainer": "custom", "target_node": args.target_node, **stats})
     # Save labeled CSV and optional plot
     mask_path = os.path.join(
         args.out_dir, f"gnn_node_{args.target_node}_mask_.npy"
-        )
+    )
     csv_path = save_neighbor_importances_csv(
         mask_path, args.node_index_csv, args.target_node,
         args.out_dir, top_k=args.top_k
-        )
+    )
     print(f"[GNNCustomExplainer] Saved top-K neighbors CSV -> {csv_path}")
     save_neighbor_importances_plot(
         mask_path, args.node_index_csv, args.target_node,
         args.out_dir, top_k=args.top_k
-        )
+    )
     print("[GNNCustomExplainer] Saved labeled top-K neighbors plot.")
+
+    # Save and plot least important neighbors
+    bottom_k = args.top_k  # Use same k for bottom as for top
+    bottom_csv_path = save_least_important_neighbors_csv(
+        mask_path, args.node_index_csv, args.target_node,
+        args.out_dir, bottom_k=bottom_k
+    )
+    print(f"[GNNCustomExplainer] Saved bottom-K neighbors CSV -> {bottom_csv_path}")
+    save_least_important_neighbors_plot(
+        mask_path, args.node_index_csv, args.target_node,
+        args.out_dir, bottom_k=bottom_k
+    )
+    print("[GNNCustomExplainer] Saved labeled bottom-K neighbors plot.")
 
 
 if __name__ == "__main__":
