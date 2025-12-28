@@ -13,9 +13,9 @@ import pandas as pd
 from torch.utils.data import DataLoader
 from torch_geometric.data import Data
 from graph_dataset import GraphDemandDataset
+from GNN.train_stgnn import eval_gnn_model
 
 from GNN.architecture.stgnn import STGNN, QuantileLoss
-from GNN.train_stgnn import eval_gnn_model
 from config.settings import GNN_CHECKPOINTS_PATH, GNN_DATA_PATH
 from utils.utils import get_date_splits
 from config.settings import ENC_VARS as feature_cols
@@ -168,11 +168,17 @@ def save_least_important_neighbors_csv(
     rows = []
     for nid in idxs:
         meta = node_map.loc[nid].to_dict() if nid in node_map.index else {}
-        rows.append({"neighbor_node_id": int(nid), "importance": float(m[nid]), **meta})
+        rows.append(
+            {"neighbor_node_id": int(nid), "importance": float(m[nid]), **meta}
+            )
     df = pd.DataFrame(rows)
-    csv_path = os.path.join(out_dir, f"xai_custom_bottom{bottom_k}_neighbors_node{target_node}.csv")
+    csv_path = os.path.join(
+        out_dir, f"xai_custom_bottom{bottom_k}_neighbors_node{target_node}.csv"
+        )
     df.to_csv(csv_path, index=False)
-    print(f"[CustomExplainer] Saved labeled bottom-{bottom_k} CSV -> {csv_path}")
+    print(
+        f"[CustomExplainer] Saved labeled bottom-{bottom_k} CSV -> {csv_path}"
+        )
     return csv_path
 
 
@@ -237,7 +243,8 @@ def save_least_important_neighbors_plot(
     plt.ylabel("Neighbor importance")
     plt.title(f"Bottom-{bottom_k} neighbors for target node {target_node}")
     plt.tight_layout()
-    png_path = os.path.join(out_dir, f"GNN_node_{target_node}_bottom_neighbors.png")
+    png_path = os.path.join(
+        out_dir, f"GNN_node_{target_node}_bottom_neighbors.png")
     plt.savefig(png_path, dpi=150)
     plt.close()
     print(f"[CustomExplainer] Saved plot -> {png_path}")
@@ -314,7 +321,7 @@ def main():
         num_workers=4, pin_memory=True
         )
     criterion = QuantileLoss(quantiles=quantiles)
-    # eval_gnn_model(model, test_loader, criterion, args.ckpt, quantiles)
+    eval_gnn_model(model, test_loader, criterion, args.ckpt, quantiles)
 
     # GNN Explainer
     stats = run_custom_edge_explainer_for_node(
@@ -344,7 +351,8 @@ def main():
         mask_path, args.node_index_csv, args.target_node,
         args.out_dir, bottom_k=bottom_k
     )
-    print(f"[GNNCustomExplainer] Saved bottom-K neighbors CSV -> {bottom_csv_path}")
+    print(f"[GNNCustomExplainer] Saved bottom-K neighbors \
+          CSV -> {bottom_csv_path}")
     save_least_important_neighbors_plot(
         mask_path, args.node_index_csv, args.target_node,
         args.out_dir, bottom_k=bottom_k
