@@ -1,6 +1,9 @@
 # Virtual environment
 venv_demand/
 
+# Files from Kaggle testing
+draft/
+
 # Data files
 .DS_Store
 *.csv

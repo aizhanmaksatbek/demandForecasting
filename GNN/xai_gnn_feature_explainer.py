@@ -11,16 +11,14 @@ import numpy as np
 import torch
 import pandas as pd
 from torch.utils.data import DataLoader
-
-from architecture.stgnn import STGNN, QuantileLoss
-from graph_dataset import GraphDemandDataset
 from torch_geometric.data import Data
-from torch_geometric.explain import Explainer
-from torch_geometric.explain.algorithm import GNNExplainer
+from graph_dataset import GraphDemandDataset
+
+from GNN.architecture.stgnn import STGNN, QuantileLoss
+from GNN.train_stgnn import eval_gnn_model
 from config.settings import GNN_CHECKPOINTS_PATH, GNN_DATA_PATH
 from utils.utils import get_date_splits
 from config.settings import ENC_VARS as feature_cols
-from GNN.train_stgnn import eval_gnn_model
 
 
 def build_static_graph_for_node(A_np: np.ndarray, target_idx: int):
@@ -45,49 +43,6 @@ class STGNNNodeAdapter(torch.nn.Module):
         yhat = self.stgnn(self.x_hist)[..., self.median_idx]  # [B,H,N]
         node_score = yhat[..., self.target_idx].mean(dim=(0, 1), keepdim=True)
         return node_score.squeeze()
-
-
-def run_gnn_explainer_for_node(
-    stgnn: STGNN,
-    A_np: np.ndarray,
-    x_hist: torch.Tensor,
-    target_idx: int,
-    out_dir: str,
-):
-    os.makedirs(out_dir, exist_ok=True)
-    device = next(stgnn.parameters()).device
-    adapter = STGNNNodeAdapter(stgnn, target_idx=target_idx).to(device)
-    adapter.x_hist = x_hist.to(device)
-    data = build_static_graph_for_node(A_np, target_idx)
-
-    # Lazy import PyG Explainer
-    model_config = {
-        'mode': 'regression',
-        'task_level': 'node',
-        'return_type': 'raw',
-    }
-
-    explainer = Explainer(
-        model=adapter,
-        algorithm=GNNExplainer(),
-        explanation_type='model',
-        node_mask_type=None,
-        edge_mask_type='object',
-        model_config=model_config,
-    )
-
-    explanation = explainer(data.x, data.edge_index, index=target_idx)
-    edge_mask = explanation.edge_mask.detach().cpu().numpy()
-    edge_index = data.edge_index.detach().cpu().numpy()
-
-    np.save(os.path.join(out_dir, f"xai_gnn_gnn_edge_mask_node{target_idx}.npy"), edge_mask)
-    np.save(os.path.join(out_dir, f"xai_gnn_gnn_edge_index_node{target_idx}.npy"), edge_index)
-
-    return {
-        'num_edges': int(edge_index.shape[1]) if edge_index.size else 0,
-        'mask_min': float(edge_mask.min()) if edge_mask.size else 0.0,
-        'mask_max': float(edge_mask.max()) if edge_mask.size else 0.0,
-    }
 
 
 def run_custom_edge_explainer_for_node(
@@ -151,11 +106,16 @@ def run_custom_edge_explainer_for_node(
         optimizer.step()
 
     m_final = (torch.sigmoid(alpha) * nb_mask).detach().cpu().numpy()
-    np.save(os.path.join(out_dir, f"xai_custom_neighbor_mask_node{target_idx}.npy"), m_final)
+    np.save(
+        os.path.join(
+            out_dir, f"xai_custom_neighbor_mask_node{target_idx}.npy"
+            ),
+        m_final)
 
     return {
         'num_neighbors': int(nb_mask.sum().item()),
-        'mask_min': float(m_final[m_final > 0].min()) if (m_final > 0).any() else 0.0,
+        'mask_min': (float(m_final[m_final > 0].min())
+                     if (m_final > 0).any() else 0.0),
         'mask_max': float(m_final.max()) if m_final.size else 0.0,
     }
 
@@ -176,9 +136,14 @@ def save_neighbor_importances_csv(
     rows = []
     for nid in idxs:
         meta = node_map.loc[nid].to_dict() if nid in node_map.index else {}
-        rows.append({"neighbor_node_id": int(nid), "importance": float(m[nid]), **meta})
+        rows.append(
+            {"neighbor_node_id": int(nid), "importance": float(m[nid]),
+             **meta}
+             )
     df = pd.DataFrame(rows)
-    csv_path = os.path.join(out_dir, f"xai_custom_top{top_k}_neighbors_node{target_node}.csv")
+    csv_path = os.path.join(
+        out_dir, f"xai_custom_top{top_k}_neighbors_node{target_node}.csv"
+        )
     df.to_csv(csv_path, index=False)
     print(f"[CustomExplainer] Saved labeled top-{top_k} CSV -> {csv_path}")
     return csv_path
@@ -202,8 +167,7 @@ def save_neighbor_importances_plot(
     vals = []
     for nid in idxs:
         meta = node_map.loc[nid] if nid in node_map.index else None
-        label = (f"id={nid}" if meta is None
-                 else f"id={nid}\nstore={meta.get('store_nbr','?')}\nfamily={meta.get('family','?')}")
+        label = (f"id={nid}, store={meta['store_nbr']}, {meta['family']}")
         labels.append(label)
         vals.append(m[nid])
     plt.figure(figsize=(10, 6))
@@ -212,7 +176,7 @@ def save_neighbor_importances_plot(
     plt.ylabel("Neighbor importance")
     plt.title(f"Top-{top_k} neighbors for target node {target_node}")
     plt.tight_layout()
-    png_path = os.path.join(out_dir, f"xai_custom_top{top_k}_neighbors_node{target_node}.png")
+    png_path = os.path.join(out_dir, f"GNN_node_{target_node}_neighbors.png")
     plt.savefig(png_path, dpi=150)
     plt.close()
     print(f"[CustomExplainer] Saved plot -> {png_path}")
@@ -230,12 +194,10 @@ def main():
                         default=os.path.join(GNN_DATA_PATH, "node_index.csv"))
     parser.add_argument("--adj", type=str,
                         default=os.path.join(GNN_DATA_PATH, "adjacency.npy"))
-    parser.add_argument("--target-node", type=int, default=0)
+    parser.add_argument("--target-node", type=int, default=10)
     parser.add_argument("--batch-index", type=int, default=0)
     parser.add_argument("--out-dir", type=str,
                         default=os.path.join(GNN_CHECKPOINTS_PATH))
-    parser.add_argument("--algo", type=str,
-                        choices=["gnn", "custom"], default="custom")
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--top-k", type=int, default=20,
                         help="Top-K neighbors of target node for explainer")
@@ -293,42 +255,27 @@ def main():
     criterion = QuantileLoss(quantiles=quantiles)
     eval_gnn_model(model, test_loader, criterion, args.ckpt, quantiles)
 
-    # Explainer selection
-    if args.algo == "gnn":
-        try:
-            import torch_geometric  # noqa: F401
-        except Exception:
-            print("PyTorch Geometric not available; falling back to custom explainer")
-            args.algo = "custom"
-
-    if args.algo == "gnn":
-        try:
-            stats = run_gnn_explainer_for_node(
-                stgnn=model, A_np=np.load(args.adj), x_hist=x_hist,
-                target_idx=args.target_node, out_dir=args.out_dir,
-            )
-            print({"explainer": "gnn", "target_node": args.target_node, **stats})
-        except Exception as e:
-            print("GNNExplainer failed (likely incompatible with STGNN's internal graph):", str(e))
-            print("Falling back to custom adjacency-mask explainer...")
-            stats = run_custom_edge_explainer_for_node(
-                stgnn=model, x_hist=x_hist, target_idx=args.target_node,
-                steps=200, lr=0.1, l1_coeff=5e-3, ent_coeff=1e-3,
-                out_dir=args.out_dir,
-            )
-            print({"explainer": "custom", "target_node": args.target_node, **stats})
-    else:
-        stats = run_custom_edge_explainer_for_node(
-            stgnn=model, x_hist=x_hist, target_idx=args.target_node,
-            steps=200, lr=0.1, l1_coeff=5e-3, ent_coeff=1e-3,
-            out_dir=args.out_dir,
+    # GNN Explainer
+    stats = run_custom_edge_explainer_for_node(
+        stgnn=model, x_hist=x_hist, target_idx=args.target_node,
+        steps=200, lr=0.1, l1_coeff=5e-3, ent_coeff=1e-3,
+        out_dir=args.out_dir,
+    )
+    print({"explainer": "custom", "target_node": args.target_node, **stats})
+    # Save labeled CSV and optional plot
+    mask_path = os.path.join(
+        args.out_dir, f"gnn_node_{args.target_node}_mask_.npy"
         )
-        print({"explainer": "custom", "target_node": args.target_node, **stats})
-        # Save labeled CSV and optional plot
-        mask_path = os.path.join(args.out_dir, f"xai_custom_neighbor_mask_node{args.target_node}.npy")
-        csv_path = save_neighbor_importances_csv(mask_path, args.node_index_csv, args.target_node, args.out_dir, top_k=args.top_k)
-
-        save_neighbor_importances_plot(mask_path, args.node_index_csv, args.target_node, args.out_dir, top_k=args.top_k)
+    csv_path = save_neighbor_importances_csv(
+        mask_path, args.node_index_csv, args.target_node,
+        args.out_dir, top_k=args.top_k
+        )
+    print(f"[GNNCustomExplainer] Saved top-K neighbors CSV -> {csv_path}")
+    save_neighbor_importances_plot(
+        mask_path, args.node_index_csv, args.target_node,
+        args.out_dir, top_k=args.top_k
+        )
+    print("[GNNCustomExplainer] Saved labeled top-K neighbors plot.")
 
 
 if __name__ == "__main__":
