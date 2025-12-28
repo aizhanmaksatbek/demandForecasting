@@ -13,9 +13,9 @@ import pandas as pd
 from torch.utils.data import DataLoader
 from torch_geometric.data import Data
 from graph_dataset import GraphDemandDataset
-from GNN.train_stgnn import eval_gnn_model
+from train_stgnn import eval_gnn_model
 
-from GNN.architecture.stgnn import STGNN, QuantileLoss
+from architecture.stgnn import STGNN, QuantileLoss
 from config.settings import GNN_CHECKPOINTS_PATH, GNN_DATA_PATH
 from utils.utils import get_date_splits
 from config.settings import ENC_VARS as feature_cols

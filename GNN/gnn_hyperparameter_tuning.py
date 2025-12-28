@@ -2,7 +2,7 @@ import optuna
 import os
 import torch
 import numpy as np
-from GNN.train_stgnn import (
+from train_stgnn import (
     get_gnn_data_splits,
     train_gnn_model,
     eval_gnn_model
@@ -14,10 +14,10 @@ from config.settings import ENC_VARS as feature_cols
 
 def objective(trial):
     # Suggest hyperparameters
-    hidden = trial.suggest_categorical("hidden", [32, 64, 128])
+    hidden = trial.suggest_categorical("hidden", [8, 16, 32, 64, 128])
     blocks = trial.suggest_int("blocks", 2, 4)
     kernel = trial.suggest_int("kernel", 2, 5)
-    dropout = trial.suggest_float("dropout", 0.0, 0.5)
+    dropout = trial.suggest_float("dropout", 0.1, 0.3)
     lr = trial.suggest_loguniform("lr", 1e-4, 1e-2)
     patience = 5
 
@@ -27,7 +27,7 @@ def objective(trial):
     args = Args()
     args.enc_len = 56
     args.horizon = 28
-    args.batch_size = 128
+    args.batch_size = 8
     args.epochs = 1
     args.lr = lr
     args.hidden = hidden
