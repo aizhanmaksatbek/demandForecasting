@@ -2,6 +2,8 @@ import argparse
 import os
 import numpy as np
 import pandas as pd
+import re
+import matplotlib.pyplot as plt
 import torch
 from lime.lime_tabular import LimeTabularExplainer
 from HYBRID_GNN_TFT.hybrid_model import HybridGNNTFT, normalize_adjacency
@@ -19,6 +21,91 @@ from config.settings import (
     HYBRID_CHECKPOINTS_PATH,
 )
 from utils.utils import set_seed, get_date_splits, build_onehot_maps
+
+
+def load_lime_csv(path: str = None) -> pd.DataFrame:
+    if path is None:
+        path = os.path.join(
+            "HYBRID_GNN_TFT", "checkpoints", "gnn_tft_lime_explanation.csv"
+        )
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"LIME CSV not found: {path}. Run HYBRID_GNN_TFT/xai_lime.py first."
+        )
+    df = pd.read_csv(path)
+    expected = ["feature", "weight"]
+    missing = [c for c in expected if c not in df.columns]
+    if missing:
+        raise ValueError(f"CSV missing expected columns: {missing}")
+    return df[expected]
+
+
+def _parse_feature_name(name: str):
+    """Return (category, time_idx, var_name) for feature string.
+    Examples:
+      static.12 -> ("static", None, "static")
+      past[7].sales -> ("past", 7, "sales")
+      future[3].month -> ("future", 3, "month")
+    """
+    if name.startswith("static"):
+        return ("static", None, "static")
+    m = re.match(r"^(past|future)\[(\d+)\]\.(.+)$", name)
+    if m:
+        grp = m.group(1)
+        t = int(m.group(2))
+        var = m.group(3)
+        return (grp, t, var)
+    return ("unknown", None, name)
+
+
+def plot_top_features(df: pd.DataFrame, top_n: int = 25, save_dir: str = None):
+    df_top = df.sort_values("weight", ascending=False).head(top_n)
+    plt.figure(figsize=(10, max(4, 0.35 * top_n)))
+    plt.barh(df_top["feature"][::-1], df_top["weight"][::-1], color="tab:blue")
+    plt.xlabel("Contribution (weight)")
+    plt.title(f"LIME Top {top_n} Feature Contributions")
+    plt.tight_layout()
+    if save_dir is None:
+        save_dir = os.path.join("HYBRID_GNN_TFT", "checkpoints")
+    os.makedirs(save_dir, exist_ok=True)
+    out = os.path.join(save_dir, f"lime_top_{top_n}_features.png")
+    plt.savefig(out, dpi=150)
+    plt.close()
+    print(f"Saved {out}")
+    return out
+
+
+def plot_aggregated_variables(df: pd.DataFrame, save_dir: str = None):
+    # Sum absolute weights by variable (across time indices), grouped by category
+    rows = []
+    for _, r in df.iterrows():
+        cat, t, var = _parse_feature_name(r["feature"])
+        rows.append({"category": cat, "var": var, "abs_weight": abs(float(r["weight"]))})
+    agg = (
+        pd.DataFrame(rows)
+        .groupby(["category", "var"], as_index=False)["abs_weight"]
+        .sum()
+        .sort_values(["category", "abs_weight"], ascending=[True, False])
+    )
+
+    # Plot per category
+    if save_dir is None:
+        save_dir = os.path.join("HYBRID_GNN_TFT", "checkpoints")
+    os.makedirs(save_dir, exist_ok=True)
+    for cat in ["static", "past", "future", "unknown"]:
+        sub = agg[agg.category == cat]
+        if sub.empty:
+            continue
+        plt.figure(figsize=(10, max(4, 0.4 * len(sub))))
+        # Use column indexing to avoid colliding with DataFrame.var method
+        plt.barh(sub["var"][::-1], sub["abs_weight"][::-1], color="tab:orange")
+        plt.xlabel("Sum |weight|")
+        plt.title(f"LIME Aggregated Contributions — {cat}")
+        plt.tight_layout()
+        out = os.path.join(save_dir, f"lime_aggregated_{cat}.png")
+        plt.savefig(out, dpi=150)
+        plt.close()
+        print(f"Saved {out}")
 
 
 def _flatten_sample(past_np: np.ndarray,
@@ -99,7 +186,8 @@ def explain_hybrid_with_lime(args):
     indexer = build_node_indexer(df[["store_nbr", "family"]].drop_duplicates())
     X_nodes = build_static_node_features(df, indexer, STATIC_COLS, static_maps)
     A = build_product_graph_adjacency(
-        df, indexer, train_end=train_end, top_k=args.top_k, min_corr=args.min_corr
+        df, indexer, train_end=train_end,
+        top_k=args.top_k, min_corr=args.min_corr
     )
     A = A.to(device)
     X_nodes = X_nodes.to(device)
@@ -139,16 +227,18 @@ def explain_hybrid_with_lime(args):
     # Expected static length = TFT static dims minus GNN embedding
     s_expected = int(model.tft.static_input_dims[0] - model.gnn_out_dim)
     for batch in test_loader:
-        past = batch["past_inputs"].cpu().numpy()   # [B, Lenc, E]
-        future = batch["future_inputs"].cpu().numpy() # [B, Ldec, D]
-        static = batch["static_inputs"].cpu().numpy() # [B, S]
+        past = batch["past_inputs"].to(device)   # [B, Lenc, E]
+        future = batch["future_inputs"].to(device)  # [B, Ldec, D]
+        static = batch["static_inputs"].to(device)  # [B, S]
         metas = batch.get("meta", [])
         for i in range(past.shape[0]):
             s_vec = static[i]
             if s_vec.shape[-1] > s_expected:
                 s_vec = s_vec[:s_expected]
             elif s_vec.shape[-1] < s_expected:
-                pad = np.zeros((s_expected - s_vec.shape[-1],), dtype=s_vec.dtype)
+                pad = np.zeros(
+                    (s_expected - s_vec.shape[-1],), dtype=s_vec.dtype
+                    )
                 s_vec = np.concatenate([s_vec, pad], axis=0)
             background.append(_flatten_sample(past[i], future[i], s_vec))
             metas_ref.append(metas[i] if i < len(metas) else None)
@@ -169,7 +259,8 @@ def explain_hybrid_with_lime(args):
     if meta is None:
         raise RuntimeError("No metadata available to derive node id for sample.")
     node_id = torch.tensor(
-        [indexer.id((meta["store_nbr"], meta["family"]))], dtype=torch.long, device=device
+        [indexer.id((meta["store_nbr"], meta["family"]))],
+        dtype=torch.long, device=device
     )
 
     n_static = s_expected
@@ -182,7 +273,9 @@ def explain_hybrid_with_lime(args):
         preds = []
         for vec in X:
             past_t, future_t, static_t = _unflatten_sample(
-                vec, enc_len, dec_len, len(ENC_VARS), len(DEC_VARS), n_static, device
+                vec, enc_len, dec_len,
+                len(ENC_VARS), len(DEC_VARS),
+                n_static, device
             )
             past_t = past_t.unsqueeze(0)    # [1, Lenc, E]
             future_t = future_t.unsqueeze(0)  # [1, Ldec, D]
@@ -252,6 +345,11 @@ def main():
 
     args = parser.parse_args()
     explain_hybrid_with_lime(args)
+
+    # Plot results
+    df_lime = load_lime_csv()
+    plot_top_features(df_lime, top_n=25)
+    plot_aggregated_variables(df_lime)
 
 
 if __name__ == "__main__":
