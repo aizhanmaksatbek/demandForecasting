@@ -1,177 +1,45 @@
 import argparse
 import os
-import random
 import numpy as np
 import pandas as pd
 import torch
-from torch.utils.data import DataLoader
 from tqdm import tqdm
-from TFT.tft_dataset import TFTWindowDataset, tft_collate
 from TFT.architecture.tft import QuantileLoss
 from hybrid_model import HybridGNNTFT, normalize_adjacency
-from torch.utils.tensorboard import SummaryWriter
-from utils import (
+from utils.utils import TensorboardConfig
+from hybrid_utils import (
     build_node_indexer,
     build_static_node_features,
-    build_product_graph_adjacency,
-    build_onehot_maps,
+    build_product_graph_adjacency
 )
-from config.settings import enc_vars, dec_vars, static_cols
+from utils.utils import build_onehot_maps
+from config.settings import ENC_VARS, DEC_VARS, STATIC_COLS
+from utils.utils import set_seed, get_date_splits
+from config.settings import TFT_DATA_DIR
+from TFT.train_tft import get_data_split
+from utils.utils import compute_metrics
+HYBRID_CHECKPOINTS_PATH = "HYBRID_GNN_TFT/checkpoints"
 
 
-def set_seed(seed: int = 42):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-
-
-def mae(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    return float(np.abs(y_true - y_pred).mean())
-
-
-def wape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    denom = np.abs(y_true).sum() + 1e-8
-    return float(np.abs(y_true - y_pred).sum() / denom)
-
-
-def smape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    denom = (np.abs(y_true) + np.abs(y_pred)) + 1e-8
-    return float((2.0 * np.abs(y_true - y_pred) / denom).mean())
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--enc-len", type=int, default=56)
-    parser.add_argument("--dec-len", type=int, default=28)
-    parser.add_argument("--batch-size", type=int, default=256)
-    parser.add_argument("--epochs", type=int, default=20)
-    parser.add_argument("--lr", type=float, default=1e-3)
-    parser.add_argument("--hidden-dim", type=int, default=128)
-    parser.add_argument("--d-model", type=int, default=64)
-    parser.add_argument("--heads", type=int, default=4)
-    parser.add_argument("--lstm-hidden", type=int, default=64)
-    parser.add_argument("--lstm-layers", type=int, default=1)
-    parser.add_argument("--dropout", type=float, default=0.1)
-    parser.add_argument("--quantiles", type=str, default="0.1,0.5,0.9")
-    parser.add_argument("--stride", type=int, default=1)
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--top-k", type=int, default=10)
-    parser.add_argument("--min-corr", type=float, default=0.2)
-    parser.add_argument("--gnn-hidden", type=int, default=64)
-    parser.add_argument("--gnn-embed", type=int, default=32)
-    parser.add_argument("--tensorboard", action="store_true",
-                        help="Enable TensorBoard logging"
-                        )
-    parser.add_argument(
-        "--log-dir",
-        type=str,
-        default=os.path.join("HYBRID_GNN_TFT", "logs"),
-        help="Directory to store TensorBoard logs",
-    )
-    args = parser.parse_args()
-
-    set_seed(args.seed)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    os.makedirs(os.path.join("HYBRID_GNN_TFT", "checkpoints"), exist_ok=True)
-    if args.tensorboard:
-        os.makedirs(args.log_dir, exist_ok=True)
-        writer = SummaryWriter(log_dir=args.log_dir)
-    else:
-        writer = None
-
-    # Load TFT panel
-    panel_path = os.path.join("TFT", "data", "panel.csv")
-    assert os.path.exists(panel_path), (
-        "Run data preprocessing first: python src/data/preprocess_favorita.py"
-    )
-    df = pd.read_csv(panel_path, parse_dates=["date"])
-
-    # Define splits
-    max_date = df["date"].max()
-    test_days = pd.Timedelta(days=args.dec_len)
-    val_days = pd.Timedelta(days=args.dec_len)
-    test_end = max_date
-    val_end = test_end - test_days
-    train_end = val_end - val_days
-
-    static_maps = build_onehot_maps(df, static_cols)
-    static_dims = [len(static_maps[c]) for c in static_cols]
-    static_dim_total = int(np.sum(static_dims))
-
-    # Datasets / loaders
-    split_bounds = (train_end, val_end, test_end)
-    train_ds = TFTWindowDataset(
-        df,
-        args.enc_len,
-        args.dec_len,
-        enc_vars,
-        dec_vars,
-        static_cols,
-        split_bounds,
-        split="train",
-        stride=args.stride,
-        static_onehot_maps=static_maps,
-    )
-    val_ds = TFTWindowDataset(
-        df,
-        args.enc_len,
-        args.dec_len,
-        enc_vars,
-        dec_vars,
-        static_cols,
-        split_bounds,
-        split="val",
-        stride=args.stride,
-        static_onehot_maps=static_maps,
-    )
-    test_ds = TFTWindowDataset(
-        df,
-        args.enc_len,
-        args.dec_len,
-        enc_vars,
-        dec_vars,
-        static_cols,
-        split_bounds,
-        split="test",
-        stride=args.stride,
-        static_onehot_maps=static_maps,
-    )
-
-    train_loader = DataLoader(
-        train_ds,
-        batch_size=args.batch_size,
-        shuffle=True,
-        num_workers=4,
-        pin_memory=True,
-        collate_fn=tft_collate,
-    )
-    val_loader = DataLoader(
-        val_ds,
-        batch_size=args.batch_size,
-        shuffle=False,
-        num_workers=4,
-        pin_memory=True,
-        collate_fn=tft_collate,
-    )
-    test_loader = DataLoader(
-        test_ds,
-        batch_size=args.batch_size,
-        shuffle=False,
-        num_workers=4,
-        pin_memory=True,
-        collate_fn=tft_collate,
-    )
-
-    print(
-        f"Train samples: {len(train_ds)} \
-        | Val: {len(val_ds)} \
-        | Test: {len(test_ds)}"
+def train_hybrid_model(args, model, train_loader, val_loader, df, train_end,
+                       static_maps):
+    quantiles = [float(x) for x in args.quantiles.split(",")]
+    criterion = QuantileLoss(quantiles=quantiles)
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=args.lr,
+        weight_decay=1e-5
         )
+    tensorboard_writer = TensorboardConfig(args.tensorboard, args.log_dir)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    os.makedirs(os.path.join(HYBRID_CHECKPOINTS_PATH), exist_ok=True)
+    best_val = float("inf")
+    best_path = os.path.join(HYBRID_CHECKPOINTS_PATH, "gnn_tft_best.pt")
 
-    # Build graph indexer and tensors
+    model = model.to(device)
+
     indexer = build_node_indexer(df[["store_nbr", "family"]].drop_duplicates())
-    X_nodes = build_static_node_features(df, indexer, static_cols, static_maps)
+    X_nodes = build_static_node_features(df, indexer, STATIC_COLS, static_maps)
     A = build_product_graph_adjacency(
         df, indexer, train_end=train_end,
         top_k=args.top_k, min_corr=args.min_corr
@@ -181,43 +49,11 @@ def main():
     X_nodes = X_nodes.to(device)
     A_norm = normalize_adjacency(A)
 
-    # Model
-    quantiles = [float(x) for x in args.quantiles.split(",")]
-    model = HybridGNNTFT(
-        static_input_dims=[static_dim_total + args.gnn_embed],
-        past_input_dims=[1] * len(enc_vars),
-        future_input_dims=[1] * len(dec_vars),
-        tft_d_model=args.d_model,
-        tft_hidden_dim=args.hidden_dim,
-        tft_heads=args.heads,
-        tft_lstm_hidden=args.lstm_hidden,
-        tft_lstm_layers=args.lstm_layers,
-        tft_dropout=args.dropout,
-        tft_num_quantiles=len(quantiles),
-        gnn_in_dim=static_dim_total,
-        gnn_hidden=args.gnn_hidden,
-        gnn_out_dim=args.gnn_embed,
-        gnn_dropout=0.1,
-    ).to(device)
-
-    criterion = QuantileLoss(quantiles=quantiles)
-    optimizer = torch.optim.Adam(
-        model.parameters(),
-        lr=args.lr,
-        weight_decay=1e-5
-        )
-
-    best_val = float("inf")
-    best_path = os.path.join(
-        "HYBRID_GNN_TFT",
-        "checkpoints",
-        "gnn_tft_best.pt"
-        )
-
     # Training loop
     for epoch in range(1, args.epochs + 1):
         model.train()
         train_loss = 0.0
+        train_t, train_pred = [], []
         pbar = tqdm(train_loader, desc=f"Epoch {epoch}/{args.epochs} [train]")
         for batch in pbar:
             past = batch["past_inputs"].to(device)
@@ -247,14 +83,18 @@ def main():
             optimizer.step()
             train_loss += loss.item() * past.size(0)
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
-        train_loss /= max(len(train_ds), 1)
-
-        if writer is not None:
-            writer.add_scalar("loss/train", train_loss, epoch)
+            train_t.append(y.detach().cpu().numpy())
+            train_pred.append(out["prediction"].detach().cpu().numpy())
+        train_loss /= max(len(train_loader.dataset), 1)
+        train_metrics = compute_metrics(train_t, train_pred)
+        print(f"Epoch {epoch} Train Metrics: {train_loss:.5f} \
+              | {train_metrics}")
+        tensorboard_writer.write("loss/train", train_loss, epoch)
 
         # Validation
         model.eval()
         val_loss = 0.0
+        val_t, val_pred = [], []
         with torch.no_grad():
             for batch in val_loader:
                 past = batch["past_inputs"].to(device)
@@ -278,12 +118,13 @@ def main():
                 y = batch["target"].to(device)
                 val_loss += (criterion(out["prediction"].to(device), y)
                              .item() * past.size(0))
-        val_loss /= max(len(val_ds), 1)
-        print(f"Epoch {epoch}: train_loss={train_loss:.5f} \
-              val_loss={val_loss:.5f}")
-
-        if writer is not None:
-            writer.add_scalar("loss/val", val_loss, epoch)
+                val_t.append(y.detach().cpu().numpy())
+                val_pred.append(out["prediction"].detach().cpu().numpy())
+            val_loss /= max(len(val_loader.dataset), 1)
+            val_metrics = compute_metrics(val_t, val_pred)
+            tensorboard_writer.write("loss/val", val_loss, epoch)
+            print(f"Validation Epoch {epoch} loss {val_loss:.5f} \
+                  | {val_metrics}")
 
         if val_loss < best_val:
             best_val = val_loss
@@ -297,10 +138,8 @@ def main():
             )
             print(f"Saved best model to {best_path}")
 
-    if writer is not None:
-        writer.flush()
-        writer.close()
 
+def eval_hybrid_model():
     # Load best and evaluate
     if os.path.exists(best_path):
         ckpt = torch.load(best_path, map_location=device)
@@ -400,7 +239,7 @@ def main():
                     )
                 # Append encoder history (past sales) before forecast horizon
                 # Use the 'sales' feature from encoder inputs
-                sales_idx = enc_vars.index("sales")
+                sales_idx = ENC_VARS.index("sales")
                 past_dates = meta["past_dates"]
                 for d_idx, date in enumerate(past_dates):
                     rows.append(
@@ -433,6 +272,110 @@ def main():
         print(
             f"Rows -> y_past: {c_past} | y_pred: {c_pred} | y_true: {c_true}"
         )
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--enc-len", type=int, default=56)
+    parser.add_argument("--dec-len", type=int, default=28)
+    parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument("--epochs", type=int, default=20)
+    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--hidden-dim", type=int, default=128)
+    parser.add_argument("--d-model", type=int, default=64)
+    parser.add_argument("--heads", type=int, default=4)
+    parser.add_argument("--lstm-hidden", type=int, default=64)
+    parser.add_argument("--lstm-layers", type=int, default=1)
+    parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument("--quantiles", type=str, default="0.1,0.5,0.9")
+    parser.add_argument("--stride", type=int, default=1)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--top-k", type=int, default=10)
+    parser.add_argument("--min-corr", type=float, default=0.2)
+    parser.add_argument("--gnn-hidden", type=int, default=64)
+    parser.add_argument("--gnn-embed", type=int, default=32)
+    parser.add_argument("--tensorboard", action="store_true",
+                        help="Enable TensorBoard logging"
+                        )
+    parser.add_argument("--log-dir", type=str,
+                        default=os.path.join("HYBRID_GNN_TFT", "logs"),
+                        help="Directory to store TensorBoard logs"
+                        )
+    args = parser.parse_args()
+
+    set_seed(args.seed)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    os.makedirs(os.path.join(HYBRID_CHECKPOINTS_PATH), exist_ok=True)
+
+    # Load TFT panel
+    panel_path = os.path.join(TFT_DATA_DIR, "panel.csv")
+    assert os.path.exists(panel_path), (
+        "Run data preprocessing first: python src/data/preprocess_favorita.py"
+    )
+    df = pd.read_csv(panel_path, parse_dates=["date"])
+
+    # Define splits
+    train_end, val_end, test_end = get_date_splits(df, args.dec_len)
+
+    static_maps = build_onehot_maps(df, STATIC_COLS)
+    static_dims = [len(static_maps[c]) for c in STATIC_COLS]
+    static_dim_total = int(np.sum(static_dims))
+
+    # Data loaders
+    (
+        train_loader,
+        val_loader,
+        test_loader,
+        static_dims,
+        train_len,
+        val_len,
+        test_len,
+    ) = get_data_split(
+        args.dec_len,
+        args.enc_len,
+        args.batch_size,
+        args.stride
+        )
+
+    # Build graph indexer and tensors
+    indexer = build_node_indexer(df[["store_nbr", "family"]].drop_duplicates())
+    X_nodes = build_static_node_features(df, indexer, STATIC_COLS, static_maps)
+    A = build_product_graph_adjacency(
+        df, indexer, train_end=train_end,
+        top_k=args.top_k, min_corr=args.min_corr
+    )
+    # Normalize adjacency once
+    A = A.to(device)
+    X_nodes = X_nodes.to(device)
+    A_norm = normalize_adjacency(A)
+
+    # Model
+    quantiles = [float(x) for x in args.quantiles.split(",")]
+    model = HybridGNNTFT(
+        static_input_dims=[static_dim_total + args.gnn_embed],
+        past_input_dims=[1] * len(ENC_VARS),
+        future_input_dims=[1] * len(DEC_VARS),
+        tft_d_model=args.d_model,
+        tft_hidden_dim=args.hidden_dim,
+        tft_heads=args.heads,
+        tft_lstm_hidden=args.lstm_hidden,
+        tft_lstm_layers=args.lstm_layers,
+        tft_dropout=args.dropout,
+        tft_num_quantiles=len(quantiles),
+        gnn_in_dim=static_dim_total,
+        gnn_hidden=args.gnn_hidden,
+        gnn_out_dim=args.gnn_embed,
+        gnn_dropout=0.1,
+    ).to(device)
+
+    criterion = QuantileLoss(quantiles=quantiles)
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=args.lr,
+        weight_decay=1e-5
+        )
+    train_hybrid_model(args, model, train_loader, val_loader, df, train_end,
+                       static_maps)
 
 
 if __name__ == "__main__":
