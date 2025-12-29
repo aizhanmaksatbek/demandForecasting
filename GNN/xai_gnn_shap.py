@@ -2,7 +2,6 @@ import os
 import numpy as np
 import torch
 import pandas as pd
-import shap
 from architecture.stgnn import STGNN
 from torch.utils.data import DataLoader
 import argparse
@@ -11,6 +10,7 @@ from config.settings import GNN_DATA_PATH, GNN_CHECKPOINTS_PATH
 from utils.utils import get_date_splits
 from config.settings import ENC_VARS as feature_cols
 import matplotlib.pyplot as plt
+import shap
 
 feature_names = feature_cols
 
@@ -101,17 +101,23 @@ def main():
     model.eval()
 
     # criterion = QuantileLoss(quantiles=quantiles)
-    # eval_gnn_model(model, test_loader, criterion, args.ckpt, quantiles)
 
     # --- Collect background and test tensors (full sequences, not zero-padded)
     background_tensors = []
     test_tensors = []
+    test_dates = []
     for i, batch in enumerate(test_loader):
         x = batch["x_hist"].to(device)
         if len(background_tensors) < args.n_background:
             background_tensors.append(x)
         if len(test_tensors) < args.n_test:
             test_tensors.append(x)
+            # Capture decoder end dates for x-axis labels
+            dec_dates = batch.get("dec_end_date")
+            if isinstance(dec_dates, (list, tuple)):
+                test_dates.extend(list(dec_dates))
+            elif dec_dates is not None:
+                test_dates.append(dec_dates)
         if (
             len(background_tensors) >= args.n_background
             and len(test_tensors) >= args.n_test
@@ -122,6 +128,31 @@ def main():
         raise RuntimeError(
             "Insufficient data for SHAP: background or test tensors empty."
         )
+
+    # Background tensor collection retained for SHAP if needed
+    X_test = torch.cat(test_tensors, dim=0).to(device)
+    # shape: [B_te, L, N, F]
+
+    target_node = int(args.target_node)
+    # q_idx and f_idx retained for SHAP when enabled
+
+    # Map target node index to human-readable label from node_index.csv
+    node_label = None
+    try:
+        nodes_df = pd.read_csv(args.node_index_csv)
+        row = nodes_df.loc[nodes_df["node_id"] == target_node]
+        if not row.empty:
+            store = str(row.iloc[0].get("store_nbr", ""))
+            fam = str(row.iloc[0].get("family", ""))
+            node_label = f"node {target_node} | store {store} | family {fam}"
+            print(f"Target node: {node_label}")
+        else:
+            print(f"Target node {target_node} not found in node_index.csv")
+    except Exception as e:
+        print(f"Warning: failed to read node_index mapping: {e}")
+
+    # --- Wrap model to expose target scalar for SHAP
+    # TargetOutput wrapper retained for SHAP if enabled later
 
     background = torch.cat(background_tensors, dim=0).to(device)
     # shape: [B_bg, L, N, F]
@@ -163,9 +194,9 @@ def main():
         sv_np = sv_any
 
     # --- Aggregate SHAP for the target node across time: [B, F]
-    sv_node_time = sv_np[:, :, target_node, :]              # [B, L, F] or [B, L, F, 1]
-    sv_node_feat = sv_node_time.mean(axis=1)                # [B, F] or [B, F, 1]
-    # Squeeze trailing singleton dim if present (DeepExplainer often adds output dim)
+    sv_node_time = sv_np[:, :, target_node, :]  # [B, L, F] or [B, L, F, 1]
+    sv_node_feat = sv_node_time.mean(axis=1)    # [B, F] or [B, F, 1]
+    # Squeeze trailing singleton dim if present
     if hasattr(sv_node_feat, "ndim") and sv_node_feat.ndim == 3:
         sv_node_feat = np.squeeze(sv_node_feat, -1)
 
@@ -174,7 +205,7 @@ def main():
     X_node_time = X_np[:, :, target_node, :]                # [B, L, F]
     X_node_feat = X_node_time.mean(axis=1)                  # [B, F]
 
-    # --- Save SHAP values (per-sample, per-feature) to CSV
+    # # --- Save SHAP values (per-sample, per-feature) to CSV
     shap_df = pd.DataFrame(sv_node_feat, columns=feature_names)
     out_csv = os.path.join(args.out_dir, "shap_values.csv")
     shap_df.to_csv(out_csv, index=False)
@@ -204,6 +235,16 @@ def main():
     plt.savefig(os.path.join(args.out_dir, "summary_plot.png"), dpi=300)
     plt.close()
 
+    # --- Plot input values per feature across test samples
+    inputs_png = os.path.join(args.out_dir, "inputs_by_feature.png")
+    plot_inputs_per_feature(
+        X_node_feat,
+        feature_names,
+        inputs_png,
+        x_labels=test_dates,
+        title=node_label,
+    )
+
 
 def plot_shap_from_file(
     csv_path,
@@ -228,6 +269,55 @@ def plot_shap_from_file(
     plt.close()
     print(f"Saved SHAP summary plot from file to {out_path}")
     return out_path
+
+
+def plot_inputs_per_feature(
+    X_node_feat,
+    feature_names,
+    out_path,
+    x_labels=None,
+    title=None,
+):
+    """Plot per-feature input values across test samples.
+
+    X_node_feat: numpy array with shape [B, F] where B=n_test samples,
+                 values aggregated over time for the target node.
+    """
+    X_arr = X_node_feat
+    if isinstance(X_arr, torch.Tensor):
+        X_arr = X_arr.detach().cpu().numpy()
+    # Ensure 2D
+    if X_arr.ndim != 2:
+        X_arr = np.squeeze(X_arr)
+    B, F = X_arr.shape
+    # Build x-axis positions and labels (dates if provided)
+    x_pos = np.arange(B)
+    labels = None
+    if x_labels is not None:
+        try:
+            labels = pd.to_datetime(x_labels).strftime("%Y-%m-%d").tolist()
+        except Exception:
+            labels = list(x_labels)
+    cols = int(np.ceil(np.sqrt(F)))
+    rows = int(np.ceil(F / cols))
+    plt.figure(figsize=(cols * 4, rows * 3))
+    if title:
+        plt.suptitle(title, fontsize=10)
+    for j in range(F):
+        ax = plt.subplot(rows, cols, j + 1)
+        ax.plot(x_pos, X_arr[:, j], marker="o", linewidth=1)
+        title = feature_names[j] if j < len(feature_names) else f"feat_{j}"
+        ax.set_title(title, fontsize=9)
+        ax.set_xlabel("date" if labels is not None else "sample")
+        ax.set_ylabel("value")
+        ax.grid(True, alpha=0.3)
+        if labels is not None:
+            ax.set_xticks(x_pos)
+            ax.set_xticklabels(labels, rotation=45, ha="right")
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=300)
+    plt.close()
+    print(f"Saved inputs-by-feature plot to {out_path}")
 
 
 if __name__ == "__main__":
