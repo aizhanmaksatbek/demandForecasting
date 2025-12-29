@@ -144,10 +144,14 @@ def main():
         if not row.empty:
             store = str(row.iloc[0].get("store_nbr", ""))
             fam = str(row.iloc[0].get("family", ""))
-            node_label = f"node {target_node} | store {store} | family {fam}"
+            node_label = (
+                f"node_id: {target_node}, store_nbr: {store}, family: {fam}"
+            )
             print(f"Target node: {node_label}")
         else:
-            print(f"Target node {target_node} not found in node_index.csv")
+            print(
+                f"Target node {target_node} not found in node_index.csv"
+            )
     except Exception as e:
         print(f"Warning: failed to read node_index mapping: {e}")
 
@@ -306,8 +310,14 @@ def plot_inputs_per_feature(
     for j in range(F):
         ax = plt.subplot(rows, cols, j + 1)
         ax.plot(x_pos, X_arr[:, j], marker="o", linewidth=1)
-        title = feature_names[j] if j < len(feature_names) else f"feat_{j}"
-        ax.set_title(title, fontsize=9)
+        feat_title = (
+            feature_names[j] if j < len(feature_names) else f"feat_{j}"
+        )
+        # Include node info in each subplot title if provided
+        if title:
+            ax.set_title(f"{feat_title}\n{title}", fontsize=9)
+        else:
+            ax.set_title(feat_title, fontsize=9)
         ax.set_xlabel("date" if labels is not None else "sample")
         ax.set_ylabel("value")
         ax.grid(True, alpha=0.3)
