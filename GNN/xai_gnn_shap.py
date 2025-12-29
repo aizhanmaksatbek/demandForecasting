@@ -280,31 +280,6 @@ def main():
     )
 
 
-def plot_shap_from_file(
-    csv_path,
-    feature_names=None,
-    out_path="summary_plot_from_file.png",
-):
-    shap_df = pd.read_csv(csv_path)
-    if feature_names is None:
-        feature_names = list(shap_df.columns)
-    plt.figure()
-    shap_vals = shap_df.values
-    # Plot mean absolute SHAP value per feature
-    mean_abs_shap = np.abs(shap_vals).mean(axis=0)
-    plt.bar(range(len(feature_names)), mean_abs_shap)
-    plt.xticks(
-        range(len(feature_names)), feature_names, rotation=45, ha='right'
-    )
-    plt.ylabel("Mean |SHAP value|")
-    plt.title("Global SHAP Feature Importance (from file)")
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=300)
-    plt.close()
-    print(f"Saved SHAP summary plot from file to {out_path}")
-    return out_path
-
-
 def plot_inputs_per_feature(
     X_node_feat,
     feature_names,
@@ -362,8 +337,3 @@ def plot_inputs_per_feature(
 
 if __name__ == "__main__":
     main()
-    # Plot from file path in out-dir for convenience
-    plot_shap_from_file(
-        os.path.join(GNN_CHECKPOINTS_PATH, "shap_values.csv"),
-        feature_names=feature_names,
-    )
