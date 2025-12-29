@@ -5,25 +5,25 @@ import pandas as pd
 import torch
 from tqdm import tqdm
 from TFT.architecture.tft import QuantileLoss
-from hybrid_model import HybridGNNTFT, normalize_adjacency
-from utils.utils import TensorboardConfig
-from hybrid_utils import (
+from HYBRID_GNN_TFT.hybrid_model import HybridGNNTFT, normalize_adjacency
+from HYBRID_GNN_TFT.hybrid_utils import (
     build_node_indexer,
     build_static_node_features,
     build_product_graph_adjacency
 )
-from utils.utils import build_onehot_maps
 from config.settings import ENC_VARS, DEC_VARS, STATIC_COLS
-from utils.utils import set_seed, get_date_splits
-from config.settings import TFT_DATA_DIR
-from TFT.train_tft import get_data_split
+from config.settings import TFT_DATA_DIR, HYBRID_CHECKPOINTS_PATH
 from utils.utils import compute_metrics
-HYBRID_CHECKPOINTS_PATH = "HYBRID_GNN_TFT/checkpoints"
+from utils.utils import set_seed, get_date_splits
+from utils.utils import build_onehot_maps
+from utils.utils import TensorboardConfig
+from TFT.train_tft import get_data_split
 
 
 def train_hybrid_model(args, model, train_loader, val_loader, df, train_end,
                        static_maps):
     quantiles = [float(x) for x in args.quantiles.split(",")]
+    median_idx = int(np.argmin([abs(q - 0.5) for q in quantiles]))
     criterion = QuantileLoss(quantiles=quantiles)
     optimizer = torch.optim.Adam(
         model.parameters(),
@@ -84,7 +84,8 @@ def train_hybrid_model(args, model, train_loader, val_loader, df, train_end,
             train_loss += loss.item() * past.size(0)
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
             train_t.append(y.detach().cpu().numpy())
-            train_pred.append(out["prediction"].detach().cpu().numpy())
+            yhat = out["prediction"][..., median_idx]
+            train_pred.append(yhat.detach().cpu().numpy())
         train_loss /= max(len(train_loader.dataset), 1)
         train_metrics = compute_metrics(train_t, train_pred)
         print(f"Epoch {epoch} Train Metrics: {train_loss:.5f} \
@@ -119,7 +120,8 @@ def train_hybrid_model(args, model, train_loader, val_loader, df, train_end,
                 val_loss += (criterion(out["prediction"].to(device), y)
                              .item() * past.size(0))
                 val_t.append(y.detach().cpu().numpy())
-                val_pred.append(out["prediction"].detach().cpu().numpy())
+                yhat = out["prediction"][..., median_idx]
+                val_pred.append(yhat.detach().cpu().numpy())
             val_loss /= max(len(val_loader.dataset), 1)
             val_metrics = compute_metrics(val_t, val_pred)
             tensorboard_writer.write("loss/val", val_loss, epoch)
@@ -139,69 +141,38 @@ def train_hybrid_model(args, model, train_loader, val_loader, df, train_end,
             print(f"Saved best model to {best_path}")
 
 
-def eval_hybrid_model():
+def eval_hybrid_model(model, args, test_loader, df, train_end, static_maps):
+    quantiles = [float(x) for x in args.quantiles.split(",")]
+    criterion = QuantileLoss(quantiles=quantiles)
+    best_path = os.path.join(HYBRID_CHECKPOINTS_PATH, "gnn_tft_best.pt")
+    quantiles = [float(x) for x in args.quantiles.split(",")]
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    indexer = build_node_indexer(df[["store_nbr", "family"]].drop_duplicates())
+    X_nodes = build_static_node_features(df, indexer, STATIC_COLS, static_maps)
+    A = build_product_graph_adjacency(
+        df, indexer, train_end=train_end,
+        top_k=args.top_k, min_corr=args.min_corr
+    )
+    # Normalize adjacency once
+    A = A.to(device)
+    X_nodes = X_nodes.to(device)
+    A_norm = normalize_adjacency(A)
+
     # Load best and evaluate
     if os.path.exists(best_path):
         ckpt = torch.load(best_path, map_location=device)
         model.load_state_dict(ckpt["model_state"])
-        print(f"Loaded best model (val pinball: {best_val:.5f})")
+        print(f"Loaded best model (val pinball: {best_path})")
+    model = model.to(device)
     model.eval()
-
-    def eval_loader(dloader):
-        total_loss = 0.0
-        ys, preds = [], []
-        with torch.no_grad():
-            for batch in dloader:
-                past = batch["past_inputs"].to(device)
-                future = batch["future_inputs"].to(device)
-                static = batch["static_inputs"].to(device)
-                metas = batch.get("meta", [])
-                node_ids = torch.tensor(
-                    [indexer.id((m["store_nbr"], m["family"])) for m in metas],
-                    dtype=torch.long,
-                    device=device,
-                )
-                out = model(
-                    past,
-                    future,
-                    static,
-                    node_ids=node_ids,
-                    A_norm=A_norm,
-                    X_nodes=X_nodes,
-                    return_attention=False,
-                )
-                y = batch["target"].to(device)
-                total_loss += (
-                    QuantileLoss(quantiles=quantiles)
-                    (out["prediction"].to(device), y).item()
-                    * past.size(0)
-                )
-                median_idx = int(np.argmin([abs(q - 0.5) for q in quantiles]))
-                yhat = out["prediction"][..., median_idx]
-                ys.append(y.detach().cpu().numpy())
-                preds.append(yhat.detach().cpu().numpy())
-        pinball = total_loss / max(len(dloader.dataset), 1)
-        ys = np.concatenate(ys, axis=0)
-        preds = np.concatenate(preds, axis=0)
-        return pinball, wape(ys, preds), smape(ys, preds)
-
-    val_pinball, val_wape, val_smape = eval_loader(val_loader)
-    test_pinball, test_wape, test_smape = eval_loader(test_loader)
-    print(
-        f"Validation  - Pinball: {val_pinball:.5f} \
-        | WAPE: {val_wape:.5f} \
-        | sMAPE: {val_smape:.5f}"
-    )
-    print(
-        f"Test - Pinball: {test_pinball:.5f} \
-        | WAPE: {test_wape:.5f} \
-        | sMAPE: {test_smape:.5f}"
-    )
 
     # Export test forecasts (median) for plotting
     median_idx = int(np.argmin([abs(q - 0.5) for q in quantiles]))
     rows = []
     with torch.no_grad():
+        total_loss = 0.0
+        test_t, test_pred = [], []
         for batch in test_loader:
             past = batch["past_inputs"].to(device)
             future = batch["future_inputs"].to(device)
@@ -221,8 +192,14 @@ def eval_hybrid_model():
                 X_nodes=X_nodes,
                 return_attention=False,
             )
-            preds_med = out["prediction"][..., median_idx].cpu().numpy()
-            targets = batch["target"].cpu().numpy()
+            # preds_med = out["prediction"][..., median_idx]
+            targets = batch["target"]
+            test_t.append(targets.detach().cpu().numpy())
+            yhat = out["prediction"][..., median_idx]
+            test_pred.append(yhat.detach().cpu().numpy())
+            total_loss += (criterion
+                           (out["prediction"].to(device), targets.to(device)
+                            ).item() * past.size(0))
             for i, meta in enumerate(metas):
                 store_nbr = meta["store_nbr"]
                 family = meta["family"]
@@ -234,7 +211,7 @@ def eval_hybrid_model():
                             "store_nbr": store_nbr,
                             "family": family,
                             "y_true": float(targets[i, d_idx]),
-                            "y_pred": float(preds_med[i, d_idx]),
+                            "y_pred": float(yhat[i, d_idx]),
                         }
                     )
                 # Append encoder history (past sales) before forecast horizon
@@ -250,6 +227,10 @@ def eval_hybrid_model():
                             "y_past": float(past[i, d_idx, sales_idx].cpu()),
                         }
                     )
+        total_loss /= max(len(test_loader.dataset), 1)
+        test_metrics = compute_metrics(test_t, test_pred)
+        print(f"Total test loss for export: {total_loss:.5f} \
+              | {test_metrics}")
     if rows:
         out_csv = os.path.join(
             "HYBRID_GNN_TFT", "checkpoints", "gnn_tft_test_forecasts.csv"
@@ -279,7 +260,7 @@ def main():
     parser.add_argument("--enc-len", type=int, default=56)
     parser.add_argument("--dec-len", type=int, default=28)
     parser.add_argument("--batch-size", type=int, default=256)
-    parser.add_argument("--epochs", type=int, default=20)
+    parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--hidden-dim", type=int, default=128)
     parser.add_argument("--d-model", type=int, default=64)
@@ -337,18 +318,6 @@ def main():
         args.stride
         )
 
-    # Build graph indexer and tensors
-    indexer = build_node_indexer(df[["store_nbr", "family"]].drop_duplicates())
-    X_nodes = build_static_node_features(df, indexer, STATIC_COLS, static_maps)
-    A = build_product_graph_adjacency(
-        df, indexer, train_end=train_end,
-        top_k=args.top_k, min_corr=args.min_corr
-    )
-    # Normalize adjacency once
-    A = A.to(device)
-    X_nodes = X_nodes.to(device)
-    A_norm = normalize_adjacency(A)
-
     # Model
     quantiles = [float(x) for x in args.quantiles.split(",")]
     model = HybridGNNTFT(
@@ -368,14 +337,9 @@ def main():
         gnn_dropout=0.1,
     ).to(device)
 
-    criterion = QuantileLoss(quantiles=quantiles)
-    optimizer = torch.optim.Adam(
-        model.parameters(),
-        lr=args.lr,
-        weight_decay=1e-5
-        )
     train_hybrid_model(args, model, train_loader, val_loader, df, train_end,
                        static_maps)
+    eval_hybrid_model(model, args, test_loader, df, train_end, static_maps)
 
 
 if __name__ == "__main__":
