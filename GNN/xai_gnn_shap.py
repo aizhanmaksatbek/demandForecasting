@@ -138,6 +138,7 @@ def main():
 
     # Map target node index to human-readable label from node_index.csv
     node_label = None
+    node_file_tag = f"node{target_node}"
     try:
         nodes_df = pd.read_csv(args.node_index_csv)
         row = nodes_df.loc[nodes_df["node_id"] == target_node]
@@ -148,6 +149,13 @@ def main():
                 f"node_id: {target_node}, store_nbr: {store}, family: {fam}"
             )
             print(f"Target node: {node_label}")
+            # Build a safe file tag for outputs
+            
+            def _san(s):
+                return "".join(ch if ch.isalnum() else "_" for ch in str(s))
+            node_file_tag = (
+                f"node{target_node}_store{_san(store)}_family{_san(fam)}"
+            )
         else:
             print(
                 f"Target node {target_node} not found in node_index.csv"
@@ -211,7 +219,10 @@ def main():
 
     # # --- Save SHAP values (per-sample, per-feature) to CSV
     shap_df = pd.DataFrame(sv_node_feat, columns=feature_names)
-    out_csv = os.path.join(args.out_dir, "shap_values.csv")
+    out_csv = os.path.join(
+        args.out_dir,
+        f"shap_values_{node_file_tag}.csv",
+    )
     shap_df.to_csv(out_csv, index=False)
     print(f"Saved SHAP values to {out_csv}")
 
@@ -226,21 +237,40 @@ def main():
         X_node_feat[0],
         feature_names=feature_names
     )
-    shap.save_html(os.path.join(args.out_dir, "force_plot.html"), force)
+    shap.save_html(
+        os.path.join(
+            args.out_dir,
+            f"force_plot_{node_file_tag}.html",
+        ),
+        force,
+    )
 
     # --- Visualize global feature importance (summary plot)
     plt.figure()
+    # Add title before saving
     shap.summary_plot(
         sv_node_feat,
         X_node_feat,
         feature_names=feature_names,
         show=False
     )
-    plt.savefig(os.path.join(args.out_dir, "summary_plot.png"), dpi=300)
+    if node_label:
+        plt.suptitle(node_label, fontsize=10)
+        plt.tight_layout()
+    plt.savefig(
+        os.path.join(
+            args.out_dir,
+            f"summary_plot_{node_file_tag}.png",
+        ),
+        dpi=300,
+    )
     plt.close()
 
     # --- Plot input values per feature across test samples
-    inputs_png = os.path.join(args.out_dir, "inputs_by_feature.png")
+    inputs_png = os.path.join(
+        args.out_dir,
+        f"inputs_by_feature_{node_file_tag}.png",
+    )
     plot_inputs_per_feature(
         X_node_feat,
         feature_names,
