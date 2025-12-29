@@ -35,6 +35,8 @@ def train_hybrid_model(args, model, train_loader, val_loader, df, train_end,
     os.makedirs(os.path.join(HYBRID_CHECKPOINTS_PATH), exist_ok=True)
     best_val = float("inf")
     best_path = os.path.join(HYBRID_CHECKPOINTS_PATH, "gnn_tft_best.pt")
+    patience = int(getattr(args, "early_stopping_patience", 5))
+    no_improve_epochs = 0
 
     model = model.to(device)
 
@@ -139,6 +141,15 @@ def train_hybrid_model(args, model, train_loader, val_loader, df, train_end,
                 best_path,
             )
             print(f"Saved best model to {best_path}")
+            no_improve_epochs = 0
+        else:
+            no_improve_epochs += 1
+            if no_improve_epochs >= patience:
+                print(
+                    f"Early stopping at epoch {epoch})"
+                )
+                break
+    tensorboard_writer.close()
 
 
 def eval_hybrid_model(model, args, test_loader, df, train_end, static_maps):
@@ -281,6 +292,9 @@ def main():
     parser.add_argument("--log-dir", type=str,
                         default=os.path.join("HYBRID_GNN_TFT", "logs"),
                         help="Directory to store TensorBoard logs"
+                        )
+    parser.add_argument("--early-stopping-patience", type=int, default=5,
+                        help="Stop if no val loss improvement for N epochs"
                         )
     args = parser.parse_args()
 
