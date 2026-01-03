@@ -15,6 +15,62 @@ import shap
 feature_names = feature_cols
 
 
+def plot_global_feature_importance(
+    shap_values,
+    feature_names,
+    out_path,
+    csv_out=None,
+    title=None,
+):
+    """Plot mean absolute SHAP values per feature as a bar chart.
+
+    shap_values: array [B, F] of SHAP values aggregated per sample
+        for target node.
+    feature_names: list[str] length F.
+    out_path: file path to save the PNG.
+    csv_out: optional path to save the ranking as CSV.
+    title: optional title to annotate the figure.
+    """
+    sv = shap_values
+    if isinstance(sv, torch.Tensor):
+        sv = sv.detach().cpu().numpy()
+    if sv.ndim != 2:
+        sv = np.squeeze(sv)
+    # Mean absolute SHAP across samples
+    mean_abs = np.mean(np.abs(sv), axis=0)  # [F]
+    # Sort descending
+    order = np.argsort(-mean_abs)
+    sorted_vals = mean_abs[order]
+    sorted_names = [
+        feature_names[i] if i < len(feature_names) else f"feat_{i}"
+        for i in order
+    ]
+
+    # Save CSV ranking if requested
+    if csv_out:
+        pd.DataFrame({
+            "feature": sorted_names,
+            "mean_abs_shap": sorted_vals,
+        }).to_csv(csv_out, index=False)
+        print(f"Saved global feature importance CSV to {csv_out}")
+
+    # Plot horizontal bar chart
+    plt.figure(figsize=(8, max(4, len(sorted_names) * 0.3)))
+    y_pos = np.arange(len(sorted_names))
+    plt.barh(y_pos, sorted_vals, color="#4C78A8")
+    plt.yticks(y_pos, sorted_names)
+    plt.xlabel("Mean |SHAP| (importance)")
+    if title:
+        plt.title(f"Global Feature Importance\n{title}")
+    else:
+        plt.title("Global Feature Importance")
+    plt.gca().invert_yaxis()  # largest on top
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=300)
+    plt.close()
+    print(f"Saved global feature importance bar chart to {out_path}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="STGNN explainer")
     parser.add_argument("--ckpt", type=str,
@@ -34,7 +90,7 @@ def main():
                         help="Number of background samples for SHAP")
     parser.add_argument("--n-test", type=int, default=16,
                         help="Number of test samples to explain")
-    parser.add_argument("--forecast-index", type=int, default=-1,
+    parser.add_argument("--forecast-index", type=int, default=1,
                         help="Which forecast step to explain (default last)")
     parser.add_argument(
         "--quantile-index",
@@ -279,6 +335,23 @@ def main():
         title=node_label,
     )
 
+    # --- Additional: Global feature importance bar chart (mean |SHAP|)
+    bar_png = os.path.join(
+        args.out_dir,
+        f"global_feature_importance_{node_file_tag}.png",
+    )
+    bar_csv = os.path.join(
+        args.out_dir,
+        f"global_feature_importance_{node_file_tag}.csv",
+    )
+    plot_global_feature_importance(
+        sv_node_feat,
+        feature_names,
+        bar_png,
+        csv_out=bar_csv,
+        title=node_label,
+    )
+
 
 def plot_inputs_per_feature(
     X_node_feat,
@@ -337,3 +410,4 @@ def plot_inputs_per_feature(
 
 if __name__ == "__main__":
     main()
+
