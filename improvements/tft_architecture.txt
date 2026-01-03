@@ -1,0 +1,110 @@
+Hyper-parameters set 1
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--enc-len", type=int, default=56)
+    parser.add_argument("--dec-len", type=int, default=28)
+    parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument("--epochs", type=int, default=0)
+    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--hidden-dim", type=int, default=128)
+    parser.add_argument("--d-model", type=int, default=64)
+    parser.add_argument("--heads", type=int, default=4)
+    parser.add_argument("--lstm-hidden", type=int, default=64)
+    parser.add_argument("--lstm-layers", type=int, default=1)
+    parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument("--quantiles", type=str, default="0.1,0.5,0.9")
+    parser.add_argument("--stride", type=int, default=1)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--early-stopping-patience", type=int, default=5,
+                        help="Stop if no val loss improvement for N epochs")
+    parser.add_argument("--early-stopping-min-delta", type=float, default=0.5,
+                        help="Minimum val loss improvement to reset patience")
+    parser.add_argument("--tensorboard", action="store_true",
+                        help="Enable TensorBoard logging")
+    parser.add_argument("--log-dir", type=str,
+                        default=os.path.join(WORKING_DIR, "TFT", "logs"),
+                        help="Directory to store TensorBoard logs")
+    parser.add_argument("--train-flag", type=bool, default=True)
+    args = parser.parse_args()
+
+
+Hyper-parameters set 2
+def main_train():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--enc-len", type=int, default=56)
+    parser.add_argument("--dec-len", type=int, default=28)
+    parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--hidden-dim", type=int, default=64)
+    parser.add_argument("--d-model", type=int, default=32)
+    parser.add_argument("--heads", type=int, default=2)
+    parser.add_argument("--lstm-hidden", type=int, default=32)
+    parser.add_argument("--lstm-layers", type=int, default=1)
+    parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument("--quantiles", type=str, default="0.1,0.5,0.9")
+    parser.add_argument("--stride", type=int, default=1)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--early-stopping-patience", type=int, default=5,
+                        help="Stop if no val loss improvement for N epochs")
+    parser.add_argument("--early-stopping-min-delta", type=float, default=0.5,
+                        help="Minimum val loss improvement to reset patience")
+    
+    parser.add_argument("--train-flag", type=bool, default=True)
+    # args = parser.parse_args()
+    args, unknown = parser.parse_known_args()
+
+
+Hyper-parameters set 3
+def main_train():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--enc-len", type=int, default=56)
+    parser.add_argument("--dec-len", type=int, default=28)
+    parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument("--epochs", type=int, default=100)
+    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--hidden-dim", type=int, default=32)
+    parser.add_argument("--d-model", type=int, default=16)
+    parser.add_argument("--heads", type=int, default=2)
+    parser.add_argument("--lstm-hidden", type=int, default=16)
+    parser.add_argument("--lstm-layers", type=int, default=1)
+    parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument("--quantiles", type=str, default="0.1,0.5,0.9")
+    parser.add_argument("--stride", type=int, default=1)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--early-stopping-patience", type=int, default=5,
+                        help="Stop if no val loss improvement for N epochs")
+    parser.add_argument("--early-stopping-min-delta", type=float, default=0.5,
+                        help="Minimum val loss improvement to reset patience")
+    
+    parser.add_argument("--train-flag", type=bool, default=True)
+
+
+Hyper-parameters set 4
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--enc-len", type=int, default=56)
+    parser.add_argument("--dec-len", type=int, default=28)
+    parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument("--epochs", type=int, default=0)
+    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--hidden-dim", type=int, default=256)
+    parser.add_argument("--d-model", type=int, default=128)
+    parser.add_argument("--heads", type=int, default=8)
+    parser.add_argument("--lstm-hidden", type=int, default=128)
+    parser.add_argument("--lstm-layers", type=int, default=1)
+    parser.add_argument("--dropout", type=float, default=0.3)
+    parser.add_argument("--quantiles", type=str, default="0.1,0.5,0.9")
+    parser.add_argument("--stride", type=int, default=1)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--early-stopping-patience", type=int, default=5,
+                        help="Stop if no val loss improvement for N epochs")
+    parser.add_argument("--early-stopping-min-delta", type=float, default=0.5,
+                        help="Minimum val loss improvement to reset patience")
+    parser.add_argument("--tensorboard", action="store_true",
+                        help="Enable TensorBoard logging")
+    parser.add_argument("--log-dir", type=str,
+                        default=os.path.join(WORKING_DIR, "TFT", "logs"),
+                        help="Directory to store TensorBoard logs")
+    parser.add_argument("--train-flag", type=bool, default=True)
+    args = parser.parse_args()
