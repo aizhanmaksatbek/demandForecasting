@@ -1,0 +1,136 @@
+Model Parameters 1
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--enc-len", type=int, default=56)
+    parser.add_argument("--dec-len", type=int, default=28)
+    parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--hidden-dim", type=int, default=128)
+    parser.add_argument("--d-model", type=int, default=64)
+    parser.add_argument("--heads", type=int, default=4)
+    parser.add_argument("--lstm-hidden", type=int, default=64)
+    parser.add_argument("--lstm-layers", type=int, default=1)
+    parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument("--quantiles", type=str, default="0.1,0.5,0.9")
+    parser.add_argument("--stride", type=int, default=1)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--top-k", type=int, default=10)
+    parser.add_argument("--min-corr", type=float, default=0.2)
+    parser.add_argument("--gnn-hidden", type=int, default=64)
+    parser.add_argument("--gnn-embed", type=int, default=32)
+    parser.add_argument("--tensorboard", action="store_true",
+                        help="Enable TensorBoard logging"
+                        )
+    parser.add_argument("--log-dir", type=str,
+                        default=os.path.join("HYBRID_GNN_TFT", "logs"),
+                        help="Directory to store TensorBoard logs"
+                        )
+    parser.add_argument("--early-stopping-patience", type=int, default=5,
+                        help="Stop if no val loss improvement for N epochs"
+                        )
+    args = parser.parse_args()
+
+
+Model Parameters 2
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--enc-len", type=int, default=56)
+    parser.add_argument("--dec-len", type=int, default=28)
+    parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--hidden-dim", type=int, default=64)
+    parser.add_argument("--d-model", type=int, default=32)
+    parser.add_argument("--heads", type=int, default=4)
+    parser.add_argument("--lstm-hidden", type=int, default=32)
+    parser.add_argument("--lstm-layers", type=int, default=1)
+    parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument("--quantiles", type=str, default="0.1,0.5,0.9")
+    parser.add_argument("--stride", type=int, default=1)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--top-k", type=int, default=10)
+    parser.add_argument("--min-corr", type=float, default=0.2)
+    parser.add_argument("--gnn-hidden", type=int, default=32)
+    parser.add_argument("--gnn-embed", type=int, default=16)
+    parser.add_argument("--tensorboard", action="store_true",
+                        help="Enable TensorBoard logging"
+                        )
+    parser.add_argument("--log-dir", type=str,
+                        default=os.path.join("HYBRID_GNN_TFT", "logs"),
+                        help="Directory to store TensorBoard logs"
+                        )
+    parser.add_argument("--early-stopping-patience", type=int, default=5,
+                        help="Stop if no val loss improvement for N epochs"
+                        )
+    args = parser.parse_args()
+
+
+Model Parameters 3
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--enc-len", type=int, default=56)
+    parser.add_argument("--dec-len", type=int, default=28)
+    parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--hidden-dim", type=int, default=256)
+    parser.add_argument("--d-model", type=int, default=128)
+    parser.add_argument("--heads", type=int, default=8)
+    parser.add_argument("--lstm-hidden", type=int, default=64)
+    parser.add_argument("--lstm-layers", type=int, default=3)
+    parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument("--quantiles", type=str, default="0.1,0.5,0.9")
+    parser.add_argument("--stride", type=int, default=1)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--top-k", type=int, default=10)
+    parser.add_argument("--min-corr", type=float, default=0.2)
+    parser.add_argument("--gnn-hidden", type=int, default=128)
+    parser.add_argument("--gnn-embed", type=int, default=64)
+    parser.add_argument("--tensorboard", action="store_true",
+                        help="Enable TensorBoard logging"
+                        )
+    parser.add_argument("--log-dir", type=str,
+                        default=os.path.join("HYBRID_GNN_TFT", "logs"),
+                        help="Directory to store TensorBoard logs"
+                        )
+    parser.add_argument("--early-stopping-patience", type=int, default=5,
+                        help="Stop if no val loss improvement for N epochs"
+                        )
+    args = parser.parse_args()
+
+
+Model Parameters 4
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--enc-len", type=int, default=56)
+    parser.add_argument("--dec-len", type=int, default=28)
+    parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--hidden-dim", type=int, default=32)
+    parser.add_argument("--d-model", type=int, default=16)
+    parser.add_argument("--heads", type=int, default=2)
+    parser.add_argument("--lstm-hidden", type=int, default=32)
+    parser.add_argument("--lstm-layers", type=int, default=1)
+    parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument("--quantiles", type=str, default="0.1,0.5,0.9")
+    parser.add_argument("--stride", type=int, default=1)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--top-k", type=int, default=10)
+    parser.add_argument("--min-corr", type=float, default=0.2)
+    parser.add_argument("--gnn-hidden", type=int, default=16)
+    parser.add_argument("--gnn-embed", type=int, default=8)
+    parser.add_argument("--tensorboard", action="store_true",
+                        help="Enable TensorBoard logging"
+                        )
+    parser.add_argument("--log-dir", type=str,
+                        default=os.path.join("HYBRID_GNN_TFT", "logs"),
+                        help="Directory to store TensorBoard logs"
+                        )
+    parser.add_argument("--early-stopping-patience", type=int, default=5,
+                        help="Stop if no val loss improvement for N epochs"
+                        )
+    args = parser.parse_args()
+
+
