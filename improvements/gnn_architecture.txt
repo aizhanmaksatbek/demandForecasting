@@ -16,7 +16,46 @@ def main():
     args = parser.parse_args()
 
 
-Model Parameters 2
+
+Model Parameters 4
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--enc-len", type=int, default=56)
+    parser.add_argument("--horizon", type=int, default=28)
+    parser.add_argument("--batch-size", type=int, default=128)
+    parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--hidden", type=int, default=32)
+    parser.add_argument("--blocks", type=int, default=3)
+    parser.add_argument("--kernel", type=int, default=3)
+    parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument("--quantiles", type=str, default="0.1,0.5,0.9")
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--patience", type=int, default=10)
+    args = parser.parse_args()
+
+
+
+Model Parameters 5
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--enc-len", type=int, default=56)
+    parser.add_argument("--horizon", type=int, default=28)
+    parser.add_argument("--batch-size", type=int, default=128)
+    parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--hidden", type=int, default=16)
+    parser.add_argument("--blocks", type=int, default=1)
+    parser.add_argument("--kernel", type=int, default=1)
+    parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument("--quantiles", type=str, default="0.1,0.5,0.9")
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--patience", type=int, default=10)
+    args = parser.parse_args()
+
+
+
+Model Parameters 2 - Doesn't fit into the GPU 128, 8 parameters
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--enc-len", type=int, default=56)
@@ -34,7 +73,7 @@ def main():
     args = parser.parse_args()
 
 
-Model Parameters 3
+Model Parameters 3 - parameters don't fit into GPU
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--enc-len", type=int, default=56)
@@ -45,24 +84,6 @@ def main():
     parser.add_argument("--hidden", type=int, default=256)
     parser.add_argument("--blocks", type=int, default=16)
     parser.add_argument("--kernel", type=int, default=16)
-    parser.add_argument("--dropout", type=float, default=0.1)
-    parser.add_argument("--quantiles", type=str, default="0.1,0.5,0.9")
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--patience", type=int, default=10)
-    args = parser.parse_args()
-
-
-Model Parameters 4
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--enc-len", type=int, default=56)
-    parser.add_argument("--horizon", type=int, default=28)
-    parser.add_argument("--batch-size", type=int, default=128)
-    parser.add_argument("--epochs", type=int, default=1)
-    parser.add_argument("--lr", type=float, default=1e-3)
-    parser.add_argument("--hidden", type=int, default=32)
-    parser.add_argument("--blocks", type=int, default=3)
-    parser.add_argument("--kernel", type=int, default=3)
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--quantiles", type=str, default="0.1,0.5,0.9")
     parser.add_argument("--seed", type=int, default=42)
