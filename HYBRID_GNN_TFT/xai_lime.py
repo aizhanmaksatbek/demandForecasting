@@ -256,6 +256,7 @@ def explain_hybrid_with_lime(args):
     # Recreate tensors for node id and meta
     # Use node id from metas_ref[target_idx] if available
     meta = metas_ref[target_idx]
+    print(metas_ref[target_idx])
     if meta is None:
         raise RuntimeError("No metadata available to derive node id for sample.")
     node_id = torch.tensor(

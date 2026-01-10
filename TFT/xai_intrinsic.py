@@ -54,6 +54,55 @@ def summarize_vsn(
     return enc_imp, dec_imp, stat_imp
 
 
+def plot_intrinsic_importance(intr, plot_path):
+    # Variable Importances
+    enc_imp, dec_imp, stat_imp = summarize_vsn(
+        intr["vsn_enc"],
+        intr["vsn_dec"],
+        intr["vsn_static"]
+        )
+    rows = 3
+    fig, axes = plt.subplots(
+        rows, 1, figsize=(12, max(6, rows * 1.6)), sharex=False
+        )
+    for j in range(rows):
+        ax = axes[j]
+        if j == 0 and enc_imp is not None:
+            x = np.arange(len(ENC_VARS))
+            ax.bar(x, enc_imp)
+            ax.set_title("Encoder Variable Importance (avg)")
+            ax.set_xticks(x)
+            ax.set_xticklabels(
+                ENC_VARS, rotation=45, ha="right"
+                )
+            ax.set_ylabel("Importance")
+            ax.grid(True, alpha=0.2)
+        elif j == 1 and dec_imp is not None:
+            x = np.arange(len(DEC_VARS))
+            ax.bar(x, dec_imp)
+            ax.set_title("Decoder Variable Importance (avg)")
+            ax.set_xticks(x)
+            ax.set_xticklabels(
+                DEC_VARS, rotation=45, ha="right"
+                )
+            ax.set_ylabel("Importance")
+            ax.grid(True, alpha=0.2)
+        elif j == 2 and stat_imp is not None:
+            x = np.arange(len(stat_imp))
+            ax.bar(x, stat_imp)
+            ax.set_title("Static Variable Importance (avg)")
+            ax.set_xticks(x)
+            ax.set_xticklabels(
+                STATIC_COLS,
+                rotation=45, ha="right"
+                )
+            ax.set_ylabel("Importance")
+            ax.grid(True, alpha=0.2)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.savefig(plot_path)
+    plt.close(fig)
+
+
 def plot_input_set(
         model, batch, batch_size, enc_vars, dec_vars, device
         ):
@@ -143,7 +192,7 @@ def plot_input_set(
             ax.grid(True, alpha=0.2)
 
         # If target/prediction exist, overlay them on the last decoder panel
-        ax_t = axes[min(D, rows) - 1, 1]
+        ax_t = axes[min(D, rows) - 0, 1]
         if target is not None:
             ax_t.plot(
                 future_x, target, lw=2.0, color="tab:red", label="target"
@@ -156,48 +205,7 @@ def plot_input_set(
             ax_t.legend(loc="upper right")
 
         axes[0, 1].set_ylabel("Value")
-        axes[min(D, rows) - 1, 1].set_xlabel("Future horizon")
-
-        # Variable Importances
-        intr = extract_tft_intrinsic(model, batch, device=device)
-        enc_imp, dec_imp, stat_imp = summarize_vsn(
-            intr["vsn_enc"],
-            intr["vsn_dec"],
-            intr["vsn_static"]
-            )
-        for j in range(min(D, rows), min(D, rows) + 3):
-            ax = axes[j, 1]
-            if j - min(D, rows) == 0 and enc_imp is not None:
-                x = np.arange(len(enc_vars))
-                ax.bar(x, enc_imp)
-                ax.set_title("Encoder Variable Importance (avg)")
-                ax.set_xticks(x)
-                ax.set_xticklabels(
-                    enc_vars, rotation=45, ha="right"
-                    )
-                ax.set_ylabel("Importance")
-                ax.grid(True, alpha=0.2)
-            elif j - min(D, rows) == 1 and dec_imp is not None:
-                x = np.arange(len(dec_vars))
-                ax.bar(x, dec_imp)
-                ax.set_title("Decoder Variable Importance (avg)")
-                ax.set_xticks(x)
-                ax.set_xticklabels(
-                    dec_vars, rotation=45, ha="right"
-                    )
-                ax.set_ylabel("Importance")
-                ax.grid(True, alpha=0.2)
-            elif j - min(D, rows) == 2 and stat_imp is not None:
-                x = np.arange(len(stat_imp))
-                ax.bar(x, stat_imp)
-                ax.set_title("Static Variable Importance (avg)")
-                ax.set_xticks(x)
-                ax.set_xticklabels(
-                    STATIC_COLS,
-                    rotation=45, ha="right"
-                    )
-                ax.set_ylabel("Importance")
-                ax.grid(True, alpha=0.2)
+        axes[min(D, rows) - 0, 1].set_xlabel("Future horizon")
 
         fig.suptitle(
             f"TFT XAI for product family {prod_fam} - Store {store_nbr}"
@@ -318,6 +326,8 @@ def run_tft_intrinsic_once(enc_len=56, dec_len=28, stride=1,
     try:
         for batch in test_loader:
             plot_input_set(model, batch, 1, ENC_VARS, DEC_VARS, device)
+            intr = extract_tft_intrinsic(model, batch, device=device)
+            plot_intrinsic_importance(intr)
 
     except Exception as e:
         print(f"Could not save input set plot: {e}")
