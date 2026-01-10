@@ -54,7 +54,7 @@ def summarize_vsn(
     return enc_imp, dec_imp, stat_imp
 
 
-def plot_intrinsic_importance(intr, plot_path):
+def plot_intrinsic_importance(intr, plot_path, title):
     # Variable Importances
     enc_imp, dec_imp, stat_imp = summarize_vsn(
         intr["vsn_enc"],
@@ -65,6 +65,7 @@ def plot_intrinsic_importance(intr, plot_path):
     fig, axes = plt.subplots(
         rows, 1, figsize=(12, max(6, rows * 1.6)), sharex=False
         )
+    fig.suptitle(title)
     for j in range(rows):
         ax = axes[j]
         if j == 0 and enc_imp is not None:
@@ -327,7 +328,12 @@ def run_tft_intrinsic_once(enc_len=56, dec_len=28, stride=1,
         for batch in test_loader:
             plot_input_set(model, batch, 1, ENC_VARS, DEC_VARS, device)
             intr = extract_tft_intrinsic(model, batch, device=device)
-            plot_intrinsic_importance(intr)
+            store_nbr = batch["meta"][0]["store_nbr"]
+            family = batch['meta'][0]['family']
+            plot_intrinsic_importance(
+                intr,
+                "TFT/checkpoints/xai_vsn.png",
+                f"Store {store_nbr} - {family} Product Family Variable Importance")
 
     except Exception as e:
         print(f"Could not save input set plot: {e}")
