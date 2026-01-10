@@ -183,7 +183,7 @@ def plot_family_aggregate(df: pd.DataFrame, family: str, save_dir: str = None):
                 lw=2,
             )
 
-    plt.title(f"Family aggregate: {family}")
+    plt.title(f"TFT: Family aggregate: {family}")
     plt.xlabel("Date")
     plt.ylabel("Sales (sum across stores)")
     plt.legend()
@@ -202,7 +202,7 @@ def plot_family_aggregate(df: pd.DataFrame, family: str, save_dir: str = None):
 def plot_family_all_stores(
     df: pd.DataFrame,
     family: str,
-    max_cols: int = 4,
+    max_cols: int = 5,
     save_dir: str = None,
 ):
     sub = df[df.family == family]
@@ -285,7 +285,7 @@ def plot_family_all_stores(
         axes[j].axis("off")
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="upper center", ncol=2)
-    fig.suptitle(f"Family: {family}", fontsize=14, y=0.98)
+    fig.suptitle(f"TFT: Family: {family} - Store {store}", fontsize=14)
     fig.tight_layout(rect=[0, 0, 1, 0.95])
 
     if save_dir is None:
@@ -302,6 +302,6 @@ if __name__ == "__main__":
     # Simple CLI-less usage example
     forecasts = load_forecasts()
     # Example calls (adjust to your data):
-    plot_store_family(forecasts, 41, "SCHOOL AND OFFICE SUPPLIES")
-    plot_family_all_stores(forecasts, "SCHOOL AND OFFICE SUPPLIES")
-    plot_family_aggregate(forecasts, "SCHOOL AND OFFICE SUPPLIES")
+    plot_store_family(forecasts, 1, "AUTOMOTIVE")
+    plot_family_all_stores(forecasts, "AUTOMOTIVE")
+    plot_family_aggregate(forecasts, "AUTOMOTIVE")
