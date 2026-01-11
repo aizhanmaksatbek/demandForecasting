@@ -261,7 +261,7 @@ def plot_store_family(
             label="Input (encoder sales)",
             lw=2,
             color="tab:gray",
-            alpha=0.8,
+            # alpha=0.8,
         )
         plt.axvline(
             first_test_date,
@@ -271,10 +271,10 @@ def plot_store_family(
         )
     plt.plot(sub.date, sub.y_true, label="Actual", lw=2)
     plt.plot(sub.date, sub.y_pred, label="Predicted", lw=2)
-    plt.title(f"STGNN Test Forecast (store={store_nbr}, family={family})")
+    plt.title(f"STGNN Forecast - store {store_nbr}, family {family}")
     plt.xlabel("Date")
     plt.ylabel("Sales")
-    plt.legend()
+    plt.legend(loc="upper left")
     plt.tight_layout()
     out = os.path.join(
         save_dir, f"stgnn_store{store_nbr}_family_{family}.png"
@@ -288,7 +288,7 @@ def plot_store_family(
 def plot_family_all_stores(
     df_pred: pd.DataFrame,
     family: str,
-    max_cols: int = 4,
+    max_cols: int = 5,
     save_dir: Optional[str] = None,
 ):
     sub = df_pred[df_pred.family == family]
@@ -357,8 +357,8 @@ def plot_family_all_stores(
     for j in range(i + 1, len(axes)):
         axes[j].axis("off")
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center", ncol=2)
-    fig.suptitle(f"Family: {family}", fontsize=14, y=0.98)
+    fig.legend(handles, labels, loc="upper left", ncol=2)
+    fig.suptitle(f"STGNN: Family {family}", fontsize=14, y=0.98)
     fig.tight_layout(rect=[0, 0, 1, 0.95])
 
     out = os.path.join(save_dir, f"stgnn_family_{family}_all_stores.png")
@@ -436,10 +436,10 @@ def plot_family_aggregate(
         )
     plt.plot(sub.date, sub.y_true, label="Actual", lw=2)
     plt.plot(sub.date, sub.y_pred, label="Predicted", lw=2)
-    plt.title(f"STGNN Test Forecast (store=aggregate, family={family})")
+    plt.title(f"STGNN Forecast - all stores, family {family}")
     plt.xlabel("Date")
     plt.ylabel("Sales")
-    plt.legend()
+    plt.legend(loc="upper left")
     plt.tight_layout()
     out = os.path.join(
         save_dir, f"stgnn_store_aggregate_family_{family}.png"
