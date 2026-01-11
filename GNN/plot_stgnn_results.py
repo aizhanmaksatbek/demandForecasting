@@ -9,7 +9,6 @@ from torch.utils.data import DataLoader
 from graph_dataset import GraphDemandDataset
 from architecture.stgnn import STGNN
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
 
 
 def _get_device() -> torch.device:
@@ -206,14 +205,6 @@ def load_forecasts(path: Optional[str] = None) -> pd.DataFrame:
     return df
 
 
-def _normalize(series: pd.Series) -> pd.Series:
-    s = series.astype(float)
-    mn, mx = s.min(), s.max()
-    if mx - mn == 0:
-        return pd.Series(np.zeros_like(s), index=s.index)
-    return (s - mn) / (mx - mn)
-
-
 def plot_store_family(
     df_pred: pd.DataFrame,
     store_nbr: int,
@@ -300,12 +291,6 @@ def plot_family_all_stores(
     max_cols: int = 4,
     save_dir: Optional[str] = None,
 ):
-    try:
-        import matplotlib.pyplot as plt
-    except Exception as e:
-        print(f"(install matplotlib) {e}")
-        return None
-
     sub = df_pred[df_pred.family == family]
     stores = sorted(sub.store_nbr.dropna().unique())
     if len(stores) == 0:
@@ -388,35 +373,78 @@ def plot_family_aggregate(
     family: str,
     save_dir: Optional[str] = None,
 ):
-    try:
-        import matplotlib.pyplot as plt
-    except Exception as e:
-        print(f"(install matplotlib) {e}")
-        return None
-
     sub = (
         df_pred[df_pred.family == family]
         .groupby("date", as_index=False)[["y_true", "y_pred"]]
         .sum()
         .sort_values("date")
+        .copy()
     )
     if sub.empty:
-        print("No rows for that family")
+        print("No rows for that (store, family)")
         return None
+
     if save_dir is None:
         save_dir = os.path.join("GNN", "checkpoints")
     os.makedirs(save_dir, exist_ok=True)
 
+    # Determine encoder history length from checkpoint (fallback to 56)
+    try:
+        panel_csv, _, _, ckpt_path, _ = _default_paths()
+        device = _get_device()
+        _, cfg, _ = _load_checkpoint(ckpt_path, device)
+        enc_len = int(cfg.get("enc_len", 56))
+    except Exception:
+        panel_csv, _, _, _, _ = _default_paths()
+        enc_len = 56
+
+    # Load raw panel to reconstruct encoder input sales history
+    try:
+        panel_df = pd.read_csv(panel_csv, parse_dates=["date"])
+        panel_df = (
+            panel_df[panel_df["family"] == family]
+            .groupby("date", as_index=False)[["sales"]]
+            .sum()
+            .sort_values("date"))
+    except Exception:
+        panel_df = None
+
+    first_test_date = sub.date.min()
+    hist_df = None
+    if panel_df is not None and pd.notnull(first_test_date):
+        start_date = first_test_date - pd.Timedelta(days=enc_len)
+        hist_df = panel_df[
+            (panel_df.date < first_test_date)
+            & (panel_df.date >= start_date)
+        ]
     plt.figure(figsize=(10, 4))
-    plt.plot(sub.date, sub.y_true, label="Actual (sum)", lw=2)
-    plt.plot(sub.date, sub.y_pred, label="Predicted (sum)", lw=2)
-    plt.title(f"Family aggregate: {family}")
+    # Input encoder history line
+    if hist_df is not None and not hist_df.empty:
+        plt.plot(
+            hist_df.date,
+            hist_df.sales,
+            label="Input (encoder sales)",
+            lw=2,
+            color="tab:gray",
+            alpha=0.8,
+        )
+        plt.axvline(
+            first_test_date,
+            color="tab:gray",
+            linestyle="--",
+            linewidth=1,
+        )
+    plt.plot(sub.date, sub.y_true, label="Actual", lw=2)
+    plt.plot(sub.date, sub.y_pred, label="Predicted", lw=2)
+    plt.title(f"STGNN Test Forecast (store=aggregate, family={family})")
     plt.xlabel("Date")
-    plt.ylabel("Sales (sum across stores)")
+    plt.ylabel("Sales")
     plt.legend()
     plt.tight_layout()
-    out = os.path.join(save_dir, f"stgnn_family_{family}_aggregate.png")
-    plt.savefig(out, dpi=150)
+    out = os.path.join(
+        save_dir, f"stgnn_store_aggregate_family_{family}.png"
+    )
+    plt.savefig(out, dpi=1024)
     plt.close()
     print(f"Saved {out}")
     return out
@@ -429,11 +457,13 @@ if __name__ == "__main__":
     # Example usage: plot a sample family across stores and one store-family
     # with features
     fams = sorted(forecasts.family.dropna().unique())
+    fam_num = fams[7]
     if len(fams) > 0:
-        plot_family_all_stores(forecasts, fams[7])
-        sample = forecasts[(forecasts.family == fams[7])].iloc[0]
+        plot_family_all_stores(forecasts, fam_num)
+        sample = forecasts[(forecasts.family == fam_num)].iloc[0]
         plot_store_family(
             forecasts,
             int(sample.store_nbr),
             str(sample.family)
         )
+    plot_family_aggregate(forecasts, fam_num, "GNN/checkpoints")
