@@ -8,6 +8,8 @@ from torch.utils.data import DataLoader
 
 from graph_dataset import GraphDemandDataset
 from architecture.stgnn import STGNN
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 
 
 def _get_device() -> torch.device:
@@ -217,15 +219,7 @@ def plot_store_family(
     store_nbr: int,
     family: str,
     save_dir: Optional[str] = None,
-    include_features: bool = True,
 ):
-    try:
-        import matplotlib.pyplot as plt
-        import matplotlib.gridspec as gridspec
-    except Exception as e:
-        print(f"(install matplotlib) {e}")
-        return None
-
     sub = (
         df_pred[(df_pred.store_nbr == store_nbr) & (df_pred.family == family)]
         .sort_values("date")
@@ -267,107 +261,37 @@ def plot_store_family(
             (panel_df.date < first_test_date)
             & (panel_df.date >= start_date)
         ]
-
-    if include_features:
-        # Select a few informative features to display
-        feat_to_show = [
-            "transactions",
-            "onpromotion",
-            "dcoilwtico",
-            "is_holiday",
-        ]
-        # Prepare normalized series (enc_mean_*) for readability
-        feat_norm = {}
-        for f in feat_to_show:
-            col = f"enc_mean_{f}"
-            if col in sub.columns:
-                feat_norm[f] = _normalize(sub[col])
-
-        fig = plt.figure(figsize=(11, 6))
-        gs = gridspec.GridSpec(2, 1, height_ratios=[2.0, 1.2])
-        ax1 = fig.add_subplot(gs[0])
-        ax2 = fig.add_subplot(gs[1], sharex=ax1)
-
-        # Top: Input encoder history (sales) before predictions
-        if hist_df is not None and not hist_df.empty:
-            ax1.plot(
-                hist_df.date,
-                hist_df.sales,
-                label="Input (encoder sales)",
-                lw=2,
-                color="tab:gray",
-                alpha=0.8,
-            )
-            # Mark boundary between history and test predictions
-            ax1.axvline(
-                first_test_date,
-                color="tab:gray",
-                linestyle="--",
-                linewidth=1,
-            )
-
-        # Top: Actual vs Predicted
-        ax1.plot(
-            sub.date, sub.y_true, label="Actual", lw=2, color="black"
+    plt.figure(figsize=(10, 4))
+    # Input encoder history line
+    if hist_df is not None and not hist_df.empty:
+        plt.plot(
+            hist_df.date,
+            hist_df.sales,
+            label="Input (encoder sales)",
+            lw=2,
+            color="tab:gray",
+            alpha=0.8,
         )
-        ax1.plot(
-            sub.date, sub.y_pred, label="Predicted", lw=2, color="tab:blue"
+        plt.axvline(
+            first_test_date,
+            color="tab:gray",
+            linestyle="--",
+            linewidth=1,
         )
-        ax1.set_title(
-            f"STGNN Test Forecast (store={store_nbr}, family={family})"
-        )
-        ax1.set_ylabel("Sales")
-        ax1.legend(loc="upper left")
-
-        # Bottom: encoder window feature means (normalized)
-        for f, s in feat_norm.items():
-            ax2.plot(sub.date, s, label=f"enc_mean {f}")
-        ax2.set_ylabel("Feature (0-1)")
-        ax2.set_xlabel("Date")
-        ax2.legend(ncol=2, fontsize=9)
-        plt.setp(ax1.get_xticklabels(), visible=False)
-        fig.tight_layout()
-
-        out = os.path.join(
-            save_dir, f"stgnn_store{store_nbr}_family_{family}.png"
-        )
-        fig.savefig(out, dpi=150)
-        plt.close(fig)
-        print(f"Saved {out}")
-        return out
-    else:
-        import matplotlib.pyplot as plt
-        plt.figure(figsize=(10, 4))
-        # Input encoder history line
-        if hist_df is not None and not hist_df.empty:
-            plt.plot(
-                hist_df.date,
-                hist_df.sales,
-                label="Input (encoder sales)",
-                lw=2,
-                color="tab:gray",
-                alpha=0.8,
-            )
-            plt.axvline(
-                first_test_date,
-                color="tab:gray",
-                linestyle="--",
-                linewidth=1,
-            )
-        plt.plot(sub.date, sub.y_true, label="Actual", lw=2)
-        plt.plot(sub.date, sub.y_pred, label="Predicted", lw=2)
-        plt.title(f"STGNN Test Forecast (store={store_nbr}, family={family})")
-        plt.xlabel("Date")
-        plt.ylabel("Sales")
-        plt.legend()
-        plt.tight_layout()
-        out = os.path.join(
-            save_dir, f"stgnn_store{store_nbr}_family_{family}.png"
-        )
-        plt.savefig(out, dpi=150)
-        plt.close()
-        print(f"Saved {out}")
-        return out
+    plt.plot(sub.date, sub.y_true, label="Actual", lw=2)
+    plt.plot(sub.date, sub.y_pred, label="Predicted", lw=2)
+    plt.title(f"STGNN Test Forecast (store={store_nbr}, family={family})")
+    plt.xlabel("Date")
+    plt.ylabel("Sales")
+    plt.legend()
+    plt.tight_layout()
+    out = os.path.join(
+        save_dir, f"stgnn_store{store_nbr}_family_{family}.png"
+    )
+    plt.savefig(out, dpi=1024)
+    plt.close()
+    print(f"Saved {out}")
+    return out
 
 
 def plot_family_all_stores(
@@ -506,11 +430,10 @@ if __name__ == "__main__":
     # with features
     fams = sorted(forecasts.family.dropna().unique())
     if len(fams) > 0:
-        plot_family_all_stores(forecasts, fams[3])
-        sample = forecasts[(forecasts.family == fams[3])].iloc[0]
+        plot_family_all_stores(forecasts, fams[7])
+        sample = forecasts[(forecasts.family == fams[7])].iloc[0]
         plot_store_family(
             forecasts,
             int(sample.store_nbr),
-            str(sample.family),
-            include_features=True,
+            str(sample.family)
         )
