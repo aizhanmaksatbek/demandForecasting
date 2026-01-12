@@ -88,7 +88,7 @@ def main():
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--n-background", type=int, default=8,
                         help="Number of background samples for SHAP")
-    parser.add_argument("--n-test", type=int, default=16,
+    parser.add_argument("--n-test", type=int, default=28,
                         help="Number of test samples to explain")
     parser.add_argument("--forecast-index", type=int, default=1,
                         help="Which forecast step to explain (default last)")
@@ -102,15 +102,8 @@ def main():
 
     # Prefer CUDA, then Apple Metal (MPS), else CPU
     device = torch.device(
-        "cuda" if torch.cuda.is_available() else (
-            "mps"
-            if (
-                hasattr(torch.backends, "mps")
-                and torch.backends.mps.is_available()
-            )
-            else "cpu"
+        "cuda" if torch.cuda.is_available() else "cpu"
         )
-    )
 
     assert os.path.exists(args.ckpt), f"Checkpoint not found: {args.ckpt}"
     assert os.path.exists(args.panel_csv), f"{args.panel_csv} not found"
@@ -155,8 +148,6 @@ def main():
     ).to(device)
     model.load_state_dict(ckpt["model_state"])  # type: ignore
     model.eval()
-
-    # criterion = QuantileLoss(quantiles=quantiles)
 
     # --- Collect background and test tensors (full sequences, not zero-padded)
     background_tensors = []
@@ -308,6 +299,7 @@ def main():
         sv_node_feat,
         X_node_feat,
         feature_names=feature_names,
+        plot_type="bar",
         show=False
     )
     if node_label:
@@ -382,7 +374,7 @@ def plot_inputs_per_feature(
             labels = list(x_labels)
     cols = int(np.ceil(np.sqrt(F)))
     rows = int(np.ceil(F / cols))
-    plt.figure(figsize=(cols * 4, rows * 3))
+    plt.figure(figsize=(cols * 5, rows * 3))
     if title:
         plt.suptitle(title, fontsize=10)
     for j in range(F):
@@ -393,7 +385,7 @@ def plot_inputs_per_feature(
         )
         # Include node info in each subplot title if provided
         if title:
-            ax.set_title(f"{feat_title}\n{title}", fontsize=9)
+            ax.set_title(f"{feat_title}", fontsize=9)
         else:
             ax.set_title(feat_title, fontsize=9)
         ax.set_xlabel("date" if labels is not None else "sample")
@@ -401,9 +393,9 @@ def plot_inputs_per_feature(
         ax.grid(True, alpha=0.3)
         if labels is not None:
             ax.set_xticks(x_pos)
-            ax.set_xticklabels(labels, rotation=45, ha="right")
+            ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=7)
     plt.tight_layout()
-    plt.savefig(out_path, dpi=300)
+    plt.savefig(out_path, dpi=720)
     plt.close()
     print(f"Saved inputs-by-feature plot to {out_path}")
 

@@ -71,7 +71,7 @@ def plot_store_family(
             plt.plot(fut_seg.date, fut_seg.y_true, label="Actual (future)", color="tab:green", lw=2)
         # Optional covariate overlays are disabled by default to match TFT
 
-    title = f"Hybrid TFT: store={store_nbr}, family={family}"
+    title = f"Hybrid: store={store_nbr}, family={family}"
     plt.title(title)
     plt.xlabel("Date")
     plt.ylabel("Sales")
@@ -142,7 +142,7 @@ def plot_family_aggregate(df: pd.DataFrame, family: str, save_dir: str = None):
 def plot_family_all_stores(
     df: pd.DataFrame,
     family: str,
-    max_cols: int = 4,
+    max_cols: int = 5,
     save_dir: str = None,
     show_onpromotion: bool = False,
 ):
@@ -199,6 +199,6 @@ if __name__ == "__main__":
     forecasts = load_forecasts()
     verify_export_schema(forecasts)
     # Examples (adjust family/store as needed)
-    plot_store_family(forecasts, 1, "BOOKS")
-    plot_family_all_stores(forecasts, "BOOKS")
-    plot_family_aggregate(forecasts, "BOOKS")
+    plot_store_family(forecasts, 1, "SEAFOOD")
+    plot_family_all_stores(forecasts, "SEAFOOD")
+    plot_family_aggregate(forecasts, "SEAFOOD")

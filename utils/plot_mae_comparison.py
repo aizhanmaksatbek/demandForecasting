@@ -63,28 +63,28 @@ def main():
         "Model 1",
         "Model 2",
         "Model 3",
-        "Model 4",
+        "Model 4"
     ]
 
     # MAE values extracted from the provided logs
     mae_data = {
         "Train": [
-            42.6364,  # Early stopping 81/200
-            54.9210,  # Early stopping 14/100
-            63.4196,  # Early stopping 27/100
-            43.8038,  # Early stopping 19/100 (MAE')
+            49.5245,
+            54.1713,
+            38.5470,
+            58.5270
         ],
         "Validation": [
-            62.6490,
-            71.0156,
-            74.1687,
-            63.7361,
+            70.9200,
+            69.9379,
+            61.3819,
+            69.9758
         ],
         "Test": [
-            61.3641,
-            70.6296,
-            71.5808,
-            64.9195,
+            68.8060,
+            69.4415,
+            59.7633,
+            68.3648
         ],
     }
 
