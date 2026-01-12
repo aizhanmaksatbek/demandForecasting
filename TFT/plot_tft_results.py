@@ -59,6 +59,10 @@ def plot_store_family(
 
     # Forecast prediction
     if not fut_seg.empty:
+        # Restrict forecasts to dates strictly after last past date to avoid plotting
+        # any model outputs that might have been exported for earlier windows
+        if split_date is not None:
+            fut_seg = fut_seg[fut_seg.date > split_date]
         plt.plot(
             fut_seg.date,
             fut_seg.y_pred,
@@ -68,9 +72,13 @@ def plot_store_family(
         )
         # Overlay actuals on forecast horizon if present
         if "y_true" in fut_seg:
+            if split_date is not None:
+                fut_seg_true = fut_seg[fut_seg.date > split_date]
+            else:
+                fut_seg_true = fut_seg
             plt.plot(
-                fut_seg.date,
-                fut_seg.y_true,
+                fut_seg_true.date,
+                fut_seg_true.y_true,
                 label="Actual (future)",
                 color="tab:green",
                 lw=2,
@@ -161,13 +169,15 @@ def plot_family_aggregate(df: pd.DataFrame, family: str, save_dir: str = None):
         split_date = past_agg.date.max()
         plt.axvline(split_date, color="#888", linestyle="--", lw=1)
     if not pred_agg.empty:
-        plt.plot(
-            pred_agg.date,
-            pred_agg.y_pred,
-            label="Forecast (sum)",
-            color="tab:blue",
-            lw=2,
-        )
+        pred_plot = pred_agg[pred_agg.date > split_date] if split_date is not None else pred_agg
+        if not pred_plot.empty:
+            plt.plot(
+                pred_plot.date,
+                pred_plot.y_pred,
+                label="Forecast (sum)",
+                color="tab:blue",
+                lw=2,
+            )
     if not true_agg.empty:
         # If we have a split date, start actuals after it to avoid overlap
         if split_date is not None:
@@ -249,6 +259,8 @@ def plot_family_all_stores(
         else:
             ssub_pred = pd.DataFrame()
         if not ssub_pred.empty:
+            if "y_past" in ssub.columns and not ssub_past.empty:
+                ssub_pred = ssub_pred[ssub_pred.date > split_date]
             ax.plot(
                 ssub_pred.date,
                 ssub_pred.y_pred,
@@ -272,6 +284,8 @@ def plot_family_all_stores(
         else:
             ssub_true = pd.DataFrame()
         if not ssub_true.empty:
+            if "y_past" in ssub.columns and not ssub_past.empty:
+                ssub_true = ssub_true[ssub_true.date > split_date]
             ax.plot(
                 ssub_true.date,
                 ssub_true.y_true,

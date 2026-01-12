@@ -66,6 +66,8 @@ def plot_store_family(
         split_date = past_seg.date.max()
         plt.axvline(split_date, color="#888", linestyle="--", lw=1)
     if not fut_seg.empty:
+        if split_date is not None:
+            fut_seg = fut_seg[fut_seg.date > split_date]
         plt.plot(fut_seg.date, fut_seg.y_pred, label="Forecast (pred)", color="tab:blue", lw=2)
         if "y_true" in fut_seg.columns:
             plt.plot(fut_seg.date, fut_seg.y_true, label="Actual (future)", color="tab:green", lw=2)
@@ -82,7 +84,7 @@ def plot_store_family(
         save_dir = os.path.join("HYBRID_GNN_TFT", "checkpoints")
     os.makedirs(save_dir, exist_ok=True)
     out = os.path.join(save_dir, f"hybrid_store{store_nbr}_family_{family}.png")
-    plt.savefig(out, dpi=150)
+    plt.savefig(out, dpi=720)
     plt.close()
     print(f"Saved {out}")
     return out
@@ -117,7 +119,9 @@ def plot_family_aggregate(df: pd.DataFrame, family: str, save_dir: str = None):
         split_date = past_agg.date.max()
         plt.axvline(split_date, color="#888", linestyle="--", lw=1)
     if not pred_agg.empty:
-        plt.plot(pred_agg.date, pred_agg.y_pred, label="Forecast (sum)", color="tab:blue", lw=2)
+        pred_plot = pred_agg[pred_agg.date > split_date] if split_date is not None else pred_agg
+        if not pred_plot.empty:
+            plt.plot(pred_plot.date, pred_plot.y_pred, label="Forecast (sum)", color="tab:blue", lw=2)
     if not true_agg.empty:
         true_plot = true_agg[true_agg.date > split_date] if split_date is not None else true_agg
         if not true_plot.empty:
@@ -133,7 +137,7 @@ def plot_family_aggregate(df: pd.DataFrame, family: str, save_dir: str = None):
         save_dir = os.path.join("HYBRID_GNN_TFT", "checkpoints")
     os.makedirs(save_dir, exist_ok=True)
     out = os.path.join(save_dir, f"hybrid_family_{family}_aggregate.png")
-    plt.savefig(out, dpi=150)
+    plt.savefig(out, dpi=720)
     plt.close()
     print(f"Saved {out}")
     return out
@@ -169,12 +173,16 @@ def plot_family_all_stores(
             ax.axvline(split_date, color="#888", linestyle="--", lw=1)
         ssub_pred = ssub.dropna(subset=["y_pred"]) if "y_pred" in ssub.columns else pd.DataFrame()
         if not ssub_pred.empty:
+            if not ssub_past.empty:
+                ssub_pred = ssub_pred[ssub_pred.date > split_date]
             ax.plot(ssub_pred.date, ssub_pred.y_pred, label="Forecast (pred)", color="tab:blue", lw=2)
             # Optional covariate overlays disabled by default
         else:
             ax.text(0.5, 0.85, "No predictions", transform=ax.transAxes, ha="center", va="center", fontsize=9, color="#666")
         ssub_true = ssub.dropna(subset=["y_true"]) if "y_true" in ssub.columns else pd.DataFrame()
         if not ssub_true.empty:
+            if not ssub_past.empty:
+                ssub_true = ssub_true[ssub_true.date > split_date]
             ax.plot(ssub_true.date, ssub_true.y_true, label="Actual (future)", color="tab:green", lw=2)
         ax.set_title(f"Store {store}")
         ax.tick_params(axis="x", rotation=45)
