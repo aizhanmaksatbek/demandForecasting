@@ -1,0 +1,366 @@
+<html>
+    <head>
+        <meta charset="utf-8">
+        
+            <script>function neighbourhoodHighlight(params) {
+  // console.log("in nieghbourhoodhighlight");
+  allNodes = nodes.get({ returnType: "Object" });
+  // originalNodes = JSON.parse(JSON.stringify(allNodes));
+  // if something is selected:
+  if (params.nodes.length > 0) {
+    highlightActive = true;
+    var i, j;
+    var selectedNode = params.nodes[0];
+    var degrees = 2;
+
+    // mark all nodes as hard to read.
+    for (let nodeId in allNodes) {
+      // nodeColors[nodeId] = allNodes[nodeId].color;
+      allNodes[nodeId].color = "rgba(200,200,200,0.5)";
+      if (allNodes[nodeId].hiddenLabel === undefined) {
+        allNodes[nodeId].hiddenLabel = allNodes[nodeId].label;
+        allNodes[nodeId].label = undefined;
+      }
+    }
+    var connectedNodes = network.getConnectedNodes(selectedNode);
+    var allConnectedNodes = [];
+
+    // get the second degree nodes
+    for (i = 1; i < degrees; i++) {
+      for (j = 0; j < connectedNodes.length; j++) {
+        allConnectedNodes = allConnectedNodes.concat(
+          network.getConnectedNodes(connectedNodes[j])
+        );
+      }
+    }
+
+    // all second degree nodes get a different color and their label back
+    for (i = 0; i < allConnectedNodes.length; i++) {
+      // allNodes[allConnectedNodes[i]].color = "pink";
+      allNodes[allConnectedNodes[i]].color = "rgba(150,150,150,0.75)";
+      if (allNodes[allConnectedNodes[i]].hiddenLabel !== undefined) {
+        allNodes[allConnectedNodes[i]].label =
+          allNodes[allConnectedNodes[i]].hiddenLabel;
+        allNodes[allConnectedNodes[i]].hiddenLabel = undefined;
+      }
+    }
+
+    // all first degree nodes get their own color and their label back
+    for (i = 0; i < connectedNodes.length; i++) {
+      // allNodes[connectedNodes[i]].color = undefined;
+      allNodes[connectedNodes[i]].color = nodeColors[connectedNodes[i]];
+      if (allNodes[connectedNodes[i]].hiddenLabel !== undefined) {
+        allNodes[connectedNodes[i]].label =
+          allNodes[connectedNodes[i]].hiddenLabel;
+        allNodes[connectedNodes[i]].hiddenLabel = undefined;
+      }
+    }
+
+    // the main node gets its own color and its label back.
+    // allNodes[selectedNode].color = undefined;
+    allNodes[selectedNode].color = nodeColors[selectedNode];
+    if (allNodes[selectedNode].hiddenLabel !== undefined) {
+      allNodes[selectedNode].label = allNodes[selectedNode].hiddenLabel;
+      allNodes[selectedNode].hiddenLabel = undefined;
+    }
+  } else if (highlightActive === true) {
+    // console.log("highlightActive was true");
+    // reset all nodes
+    for (let nodeId in allNodes) {
+      // allNodes[nodeId].color = "purple";
+      allNodes[nodeId].color = nodeColors[nodeId];
+      // delete allNodes[nodeId].color;
+      if (allNodes[nodeId].hiddenLabel !== undefined) {
+        allNodes[nodeId].label = allNodes[nodeId].hiddenLabel;
+        allNodes[nodeId].hiddenLabel = undefined;
+      }
+    }
+    highlightActive = false;
+  }
+
+  // transform the object into an array
+  var updateArray = [];
+  if (params.nodes.length > 0) {
+    for (let nodeId in allNodes) {
+      if (allNodes.hasOwnProperty(nodeId)) {
+        // console.log(allNodes[nodeId]);
+        updateArray.push(allNodes[nodeId]);
+      }
+    }
+    nodes.update(updateArray);
+  } else {
+    // console.log("Nothing was selected");
+    for (let nodeId in allNodes) {
+      if (allNodes.hasOwnProperty(nodeId)) {
+        // console.log(allNodes[nodeId]);
+        // allNodes[nodeId].color = {};
+        updateArray.push(allNodes[nodeId]);
+      }
+    }
+    nodes.update(updateArray);
+  }
+}
+
+function filterHighlight(params) {
+  allNodes = nodes.get({ returnType: "Object" });
+  // if something is selected:
+  if (params.nodes.length > 0) {
+    filterActive = true;
+    let selectedNodes = params.nodes;
+
+    // hiding all nodes and saving the label
+    for (let nodeId in allNodes) {
+      allNodes[nodeId].hidden = true;
+      if (allNodes[nodeId].savedLabel === undefined) {
+        allNodes[nodeId].savedLabel = allNodes[nodeId].label;
+        allNodes[nodeId].label = undefined;
+      }
+    }
+
+    for (let i=0; i < selectedNodes.length; i++) {
+      allNodes[selectedNodes[i]].hidden = false;
+      if (allNodes[selectedNodes[i]].savedLabel !== undefined) {
+        allNodes[selectedNodes[i]].label = allNodes[selectedNodes[i]].savedLabel;
+        allNodes[selectedNodes[i]].savedLabel = undefined;
+      }
+    }
+
+  } else if (filterActive === true) {
+    // reset all nodes
+    for (let nodeId in allNodes) {
+      allNodes[nodeId].hidden = false;
+      if (allNodes[nodeId].savedLabel !== undefined) {
+        allNodes[nodeId].label = allNodes[nodeId].savedLabel;
+        allNodes[nodeId].savedLabel = undefined;
+      }
+    }
+    filterActive = false;
+  }
+
+  // transform the object into an array
+  var updateArray = [];
+  if (params.nodes.length > 0) {
+    for (let nodeId in allNodes) {
+      if (allNodes.hasOwnProperty(nodeId)) {
+        updateArray.push(allNodes[nodeId]);
+      }
+    }
+    nodes.update(updateArray);
+  } else {
+    for (let nodeId in allNodes) {
+      if (allNodes.hasOwnProperty(nodeId)) {
+        updateArray.push(allNodes[nodeId]);
+      }
+    }
+    nodes.update(updateArray);
+  }
+}
+
+function selectNode(nodes) {
+  network.selectNodes(nodes);
+  neighbourhoodHighlight({ nodes: nodes });
+  return nodes;
+}
+
+function selectNodes(nodes) {
+  network.selectNodes(nodes);
+  filterHighlight({nodes: nodes});
+  return nodes;
+}
+
+function highlightFilter(filter) {
+  let selectedNodes = []
+  let selectedProp = filter['property']
+  if (filter['item'] === 'node') {
+    let allNodes = nodes.get({ returnType: "Object" });
+    for (let nodeId in allNodes) {
+      if (allNodes[nodeId][selectedProp] && filter['value'].includes((allNodes[nodeId][selectedProp]).toString())) {
+        selectedNodes.push(nodeId)
+      }
+    }
+  }
+  else if (filter['item'] === 'edge'){
+    let allEdges = edges.get({returnType: 'object'});
+    // check if the selected property exists for selected edge and select the nodes connected to the edge
+    for (let edge in allEdges) {
+      if (allEdges[edge][selectedProp] && filter['value'].includes((allEdges[edge][selectedProp]).toString())) {
+        selectedNodes.push(allEdges[edge]['from'])
+        selectedNodes.push(allEdges[edge]['to'])
+      }
+    }
+  }
+  selectNodes(selectedNodes)
+}</script>
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/dist/dist/vis-network.min.css" integrity="sha512-WgxfT5LWjfszlPHXRmBWHkV2eceiWTOBvrKCNbdgDYTHrT2AeLCGbF4sZlZw3UMN3WtL0tGUoIAKsu8mllg/XA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/dist/vis-network.min.js" integrity="sha512-LnvoEWDFrqGHlHmDD2101OrLcbsfkrzoSpvtSQtxK3RMnRV0eOkhhBN2dXHKRrUU8p2DGRTk35n4O8nWSVe1mQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+            
+            
+            
+            
+            
+            
+
+        
+<center>
+<h1></h1>
+</center>
+
+<!-- <link rel="stylesheet" href="../node_modules/vis/dist/vis.min.css" type="text/css" />
+<script type="text/javascript" src="../node_modules/vis/dist/vis.js"> </script>-->
+        <link
+          href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta3/dist/css/bootstrap.min.css"
+          rel="stylesheet"
+          integrity="sha384-eOJMYsd53ii+scO/bJGFsiCZc+5NDVN2yr8+0RDqr0Ql0h+rP48ckxlpbzKgwra6"
+          crossorigin="anonymous"
+        />
+        <script
+          src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta3/dist/js/bootstrap.bundle.min.js"
+          integrity="sha384-JEW9xMcG8R+pH31jmWH6WWP0WintQrMb4s7ZOdauHnUtxwoG2vI5DkLtS3qm9Ekf"
+          crossorigin="anonymous"
+        ></script>
+
+
+        <center>
+          <h1></h1>
+        </center>
+        <style type="text/css">
+
+             #mynetwork {
+                 width: 100%;
+                 height: 900px;
+                 background-color: #FFFFFF;
+                 border: 1px solid lightgray;
+                 position: relative;
+                 float: left;
+             }
+
+             
+
+             
+             #config {
+                 float: left;
+                 width: 400px;
+                 height: 600px;
+             }
+             
+
+             
+        </style>
+    </head>
+
+
+    <body>
+        <div class="card" style="width: 100%">
+            
+            
+            <div id="mynetwork" class="card-body"></div>
+        </div>
+
+        
+        
+            <div id="config"></div>
+        
+
+        <script type="text/javascript">
+
+              // initialize global variables.
+              var edges;
+              var nodes;
+              var allNodes;
+              var allEdges;
+              var nodeColors;
+              var originalNodes;
+              var network;
+              var container;
+              var options, data;
+              var filter = {
+                  item : '',
+                  property : '',
+                  value : []
+              };
+
+              
+
+              
+
+              // This method is responsible for drawing the graph, returns the drawn network
+              function drawGraph() {
+                  var container = document.getElementById('mynetwork');
+
+                  
+
+                  // parsing and collecting nodes and edges from the python
+                  nodes = new vis.DataSet([{"color": "#E5F5E5", "font": {"color": "#222222"}, "id": "10", "label": "Node-10 (EGGS, 1)", "shape": "dot", "size": 12, "title": "Center Node 10 | Neighbors: {\u00271726\u0027, \u002713\u0027, \u0027208\u0027, \u002729\u0027, \u0027307\u0027, \u0027109\u0027, \u002714\u0027, \u0027736\u0027, \u00278\u0027, \u00275\u0027, \u0027340\u0027, \u002723\u0027, \u00277\u0027, \u00272\u0027, \u002718\u0027, \u002776\u0027, \u00270\u0027, \u002730\u0027, \u0027967\u0027, \u00271\u0027, \u00276\u0027, \u002724\u0027, \u002732\u0027, \u0027538\u0027, \u0027439\u0027, \u0027571\u0027, \u002715\u0027, \u00271561\u0027, \u0027637\u0027, \u002712\u0027, \u0027142\u0027, \u002719\u0027, \u0027241\u0027, \u002726\u0027, \u00271429\u0027, \u00271495\u0027, \u002727\u0027, \u00273\u0027, \u00279\u0027, \u002725\u0027, \u00271528\u0027, \u00271462\u0027, \u002716\u0027, \u0027472\u0027, \u00271198\u0027, \u0027274\u0027, \u00271297\u0027, \u002743\u0027, \u0027175\u0027, \u0027769\u0027, \u00271594\u0027, \u002728\u0027}", "value": 52}, {"color": "#118AB2", "font": {"color": "#222222"}, "id": "12", "label": "12 (GROCERY I, 1)", "shape": "dot", "title": "Node 12 | Store: 1 | Family: GROCERY I | Importance: 0.761 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#06D6A0", "font": {"color": "#222222"}, "id": "3", "label": "3 (BEVERAGES, 1)", "shape": "dot", "title": "Node 3 | Store: 1 | Family: BEVERAGES | Importance: 0.761 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#FFD166", "font": {"color": "#222222"}, "id": "30", "label": "30 (PRODUCE, 1)", "shape": "dot", "title": "Node 30 | Store: 1 | Family: PRODUCE | Importance: 0.760 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#073B4C", "font": {"color": "#222222"}, "id": "8", "label": "8 (DAIRY, 1)", "shape": "dot", "title": "Node 8 | Store: 1 | Family: DAIRY | Importance: 0.754 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#8ECAE6", "font": {"color": "#222222"}, "id": "7", "label": "7 (CLEANING, 1)", "shape": "dot", "title": "Node 7 | Store: 1 | Family: CLEANING | Importance: 0.753 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#FFB703", "font": {"color": "#222222"}, "id": "5", "label": "5 (BREAD/BAKERY, 1)", "shape": "dot", "title": "Node 5 | Store: 1 | Family: BREAD/BAKERY | Importance: 0.742 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#023047", "font": {"color": "#222222"}, "id": "28", "label": "28 (POULTRY, 1)", "shape": "dot", "title": "Node 28 | Store: 1 | Family: POULTRY | Importance: 0.740 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#8338EC", "font": {"color": "#222222"}, "id": "24", "label": "24 (MEATS, 1)", "shape": "dot", "title": "Node 24 | Store: 1 | Family: MEATS | Importance: 0.739 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#287E4C", "font": {"color": "#222222"}, "id": "967", "label": "967 (EGGS, 30)", "shape": "dot", "title": "Node 967 | Store: 30 | Family: EGGS | Importance: 0.737 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#287E4C", "font": {"color": "#222222"}, "id": "76", "label": "76 (EGGS, 3)", "shape": "dot", "title": "Node 76 | Store: 3 | Family: EGGS | Importance: 0.737 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#287E4C", "font": {"color": "#222222"}, "id": "1429", "label": "1429 (EGGS, 44)", "shape": "dot", "title": "Node 1429 | Store: 44 | Family: EGGS | Importance: 0.736 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#287E4C", "font": {"color": "#222222"}, "id": "1594", "label": "1594 (EGGS, 49)", "shape": "dot", "title": "Node 1594 | Store: 49 | Family: EGGS | Importance: 0.734 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#287E4C", "font": {"color": "#222222"}, "id": "208", "label": "208 (EGGS, 7)", "shape": "dot", "title": "Node 208 | Store: 7 | Family: EGGS | Importance: 0.734 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#287E4C", "font": {"color": "#222222"}, "id": "241", "label": "241 (EGGS, 8)", "shape": "dot", "title": "Node 241 | Store: 8 | Family: EGGS | Importance: 0.729 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#287E4C", "font": {"color": "#222222"}, "id": "769", "label": "769 (EGGS, 24)", "shape": "dot", "title": "Node 769 | Store: 24 | Family: EGGS | Importance: 0.726 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#287E4C", "font": {"color": "#222222"}, "id": "571", "label": "571 (EGGS, 18)", "shape": "dot", "title": "Node 571 | Store: 18 | Family: EGGS | Importance: 0.723 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#287E4C", "font": {"color": "#222222"}, "id": "538", "label": "538 (EGGS, 17)", "shape": "dot", "title": "Node 538 | Store: 17 | Family: EGGS | Importance: 0.719 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#287E4C", "font": {"color": "#222222"}, "id": "1462", "label": "1462 (EGGS, 45)", "shape": "dot", "title": "Node 1462 | Store: 45 | Family: EGGS | Importance: 0.717 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#287E4C", "font": {"color": "#222222"}, "id": "1297", "label": "1297 (EGGS, 40)", "shape": "dot", "title": "Node 1297 | Store: 40 | Family: EGGS | Importance: 0.715 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#287E4C", "font": {"color": "#222222"}, "id": "1528", "label": "1528 (EGGS, 47)", "shape": "dot", "title": "Node 1528 | Store: 47 | Family: EGGS | Importance: 0.713 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#287E4C", "font": {"color": "#222222"}, "id": "175", "label": "175 (EGGS, 6)", "shape": "dot", "title": "Node 175 | Store: 6 | Family: EGGS | Importance: 0.707 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#287E4C", "font": {"color": "#222222"}, "id": "43", "label": "43 (EGGS, 2)", "shape": "dot", "title": "Node 43 | Store: 2 | Family: EGGS | Importance: 0.707 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#287E4C", "font": {"color": "#222222"}, "id": "109", "label": "109 (EGGS, 4)", "shape": "dot", "title": "Node 109 | Store: 4 | Family: EGGS | Importance: 0.704 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#FB8500", "font": {"color": "#222222"}, "id": "25", "label": "25 (PERSONAL CARE, 1)", "shape": "dot", "title": "Node 25 | Store: 1 | Family: PERSONAL CARE | Importance: 0.703 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#90BE6D", "font": {"color": "#222222"}, "id": "18", "label": "18 (HOME CARE, 1)", "shape": "dot", "title": "Node 18 | Store: 1 | Family: HOME CARE | Importance: 0.703 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#287E4C", "font": {"color": "#222222"}, "id": "1198", "label": "1198 (EGGS, 37)", "shape": "dot", "title": "Node 1198 | Store: 37 | Family: EGGS | Importance: 0.697 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#118AB2", "font": {"color": "#222222"}, "id": "9", "label": "9 (DELI, 1)", "shape": "dot", "title": "Node 9 | Store: 1 | Family: DELI | Importance: 0.685 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#287E4C", "font": {"color": "#222222"}, "id": "274", "label": "274 (EGGS, 9)", "shape": "dot", "title": "Node 274 | Store: 9 | Family: EGGS | Importance: 0.682 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#287E4C", "font": {"color": "#222222"}, "id": "1726", "label": "1726 (EGGS, 53)", "shape": "dot", "title": "Node 1726 | Store: 53 | Family: EGGS | Importance: 0.654 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#287E4C", "font": {"color": "#222222"}, "id": "142", "label": "142 (EGGS, 5)", "shape": "dot", "title": "Node 142 | Store: 5 | Family: EGGS | Importance: 0.637 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#287E4C", "font": {"color": "#222222"}, "id": "637", "label": "637 (EGGS, 20)", "shape": "dot", "title": "Node 637 | Store: 20 | Family: EGGS | Importance: 0.615 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#287E4C", "font": {"color": "#222222"}, "id": "1495", "label": "1495 (EGGS, 46)", "shape": "dot", "title": "Node 1495 | Store: 46 | Family: EGGS | Importance: 0.603 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#287E4C", "font": {"color": "#222222"}, "id": "472", "label": "472 (EGGS, 15)", "shape": "dot", "title": "Node 472 | Store: 15 | Family: EGGS | Importance: 0.599 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#287E4C", "font": {"color": "#222222"}, "id": "340", "label": "340 (EGGS, 11)", "shape": "dot", "title": "Node 340 | Store: 11 | Family: EGGS | Importance: 0.566 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#287E4C", "font": {"color": "#222222"}, "id": "1561", "label": "1561 (EGGS, 48)", "shape": "dot", "title": "Node 1561 | Store: 48 | Family: EGGS | Importance: 0.551 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#287E4C", "font": {"color": "#222222"}, "id": "736", "label": "736 (EGGS, 23)", "shape": "dot", "title": "Node 736 | Store: 23 | Family: EGGS | Importance: 0.507 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#06D6A0", "font": {"color": "#222222"}, "id": "29", "label": "29 (PREPARED FOODS, 1)", "shape": "dot", "title": "Node 29 | Store: 1 | Family: PREPARED FOODS | Importance: 0.478 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#FFD166", "font": {"color": "#222222"}, "id": "15", "label": "15 (HOME AND KITCHEN I, 1)", "shape": "dot", "title": "Node 15 | Store: 1 | Family: HOME AND KITCHEN I | Importance: 0.252 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#073B4C", "font": {"color": "#222222"}, "id": "16", "label": "16 (HOME AND KITCHEN II, 1)", "shape": "dot", "title": "Node 16 | Store: 1 | Family: HOME AND KITCHEN II | Importance: 0.239 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#8ECAE6", "font": {"color": "#222222"}, "id": "32", "label": "32 (SEAFOOD, 1)", "shape": "dot", "title": "Node 32 | Store: 1 | Family: SEAFOOD | Importance: 0.238 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#FFB703", "font": {"color": "#222222"}, "id": "13", "label": "13 (GROCERY II, 1)", "shape": "dot", "title": "Node 13 | Store: 1 | Family: GROCERY II | Importance: 0.237 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#287E4C", "font": {"color": "#222222"}, "id": "307", "label": "307 (EGGS, 10)", "shape": "dot", "title": "Node 307 | Store: 10 | Family: EGGS | Importance: 0.234 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#287E4C", "font": {"color": "#222222"}, "id": "439", "label": "439 (EGGS, 14)", "shape": "dot", "title": "Node 439 | Store: 14 | Family: EGGS | Importance: 0.230 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#023047", "font": {"color": "#222222"}, "id": "6", "label": "6 (CELEBRATION, 1)", "shape": "dot", "title": "Node 6 | Store: 1 | Family: CELEBRATION | Importance: 0.229 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#8338EC", "font": {"color": "#222222"}, "id": "19", "label": "19 (LADIESWEAR, 1)", "shape": "dot", "title": "Node 19 | Store: 1 | Family: LADIESWEAR | Importance: 0.227 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#FB8500", "font": {"color": "#222222"}, "id": "27", "label": "27 (PLAYERS AND ELECTRONICS, 1)", "shape": "dot", "title": "Node 27 | Store: 1 | Family: PLAYERS AND ELECTRONICS | Importance: 0.225 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#90BE6D", "font": {"color": "#222222"}, "id": "23", "label": "23 (MAGAZINES, 1)", "shape": "dot", "title": "Node 23 | Store: 1 | Family: MAGAZINES | Importance: 0.225 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#118AB2", "font": {"color": "#222222"}, "id": "26", "label": "26 (PET SUPPLIES, 1)", "shape": "dot", "title": "Node 26 | Store: 1 | Family: PET SUPPLIES | Importance: 0.224 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#06D6A0", "font": {"color": "#222222"}, "id": "14", "label": "14 (HARDWARE, 1)", "shape": "dot", "title": "Node 14 | Store: 1 | Family: HARDWARE | Importance: 0.223 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#FFD166", "font": {"color": "#222222"}, "id": "0", "label": "0 (AUTOMOTIVE, 1)", "shape": "dot", "title": "Node 0 | Store: 1 | Family: AUTOMOTIVE | Importance: 0.223 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#073B4C", "font": {"color": "#222222"}, "id": "2", "label": "2 (BEAUTY, 1)", "shape": "dot", "title": "Node 2 | Store: 1 | Family: BEAUTY | Importance: 0.223 | Neighbors: {\u002710\u0027}", "value": 1}, {"color": "#8ECAE6", "font": {"color": "#222222"}, "id": "1", "label": "1 (BABY CARE, 1)", "shape": "dot", "title": "Node 1 | Store: 1 | Family: BABY CARE | Importance: 0.222 | Neighbors: {\u002710\u0027}", "value": 1}]);
+                  edges = new vis.DataSet([{"from": "10", "length": 80.0, "title": "Importance: 0.761 | Store: 1 | Family: GROCERY I", "to": "12"}, {"from": "10", "length": 80.09610233295084, "title": "Importance: 0.761 | Store: 1 | Family: BEVERAGES", "to": "3"}, {"from": "10", "length": 80.24977587578724, "title": "Importance: 0.760 | Store: 1 | Family: PRODUCE", "to": "30"}, {"from": "10", "length": 81.5494872759844, "title": "Importance: 0.754 | Store: 1 | Family: DAIRY", "to": "8"}, {"from": "10", "length": 81.77854453098166, "title": "Importance: 0.753 | Store: 1 | Family: CLEANING", "to": "7"}, {"from": "10", "length": 83.97241348210383, "title": "Importance: 0.742 | Store: 1 | Family: BREAD/BAKERY", "to": "5"}, {"from": "10", "length": 84.4526119875353, "title": "Importance: 0.740 | Store: 1 | Family: POULTRY", "to": "28"}, {"from": "10", "length": 84.74794628158926, "title": "Importance: 0.739 | Store: 1 | Family: MEATS", "to": "24"}, {"from": "10", "length": 85.05624537160307, "title": "Importance: 0.737 | Store: 30 | Family: EGGS", "to": "967"}, {"from": "10", "length": 85.15257317926626, "title": "Importance: 0.737 | Store: 3 | Family: EGGS", "to": "76"}, {"from": "10", "length": 85.24105947748896, "title": "Importance: 0.736 | Store: 44 | Family: EGGS", "to": "1429"}, {"from": "10", "length": 85.70567517502278, "title": "Importance: 0.734 | Store: 49 | Family: EGGS", "to": "1594"}, {"from": "10", "length": 85.81881337512863, "title": "Importance: 0.734 | Store: 7 | Family: EGGS", "to": "208"}, {"from": "10", "length": 86.70499162651117, "title": "Importance: 0.729 | Store: 8 | Family: EGGS", "to": "241"}, {"from": "10", "length": 87.36950318291221, "title": "Importance: 0.726 | Store: 24 | Family: EGGS", "to": "769"}, {"from": "10", "length": 88.06906353071008, "title": "Importance: 0.723 | Store: 18 | Family: EGGS", "to": "571"}, {"from": "10", "length": 88.84169021168083, "title": "Importance: 0.719 | Store: 17 | Family: EGGS", "to": "538"}, {"from": "10", "length": 89.35403138999445, "title": "Importance: 0.717 | Store: 45 | Family: EGGS", "to": "1462"}, {"from": "10", "length": 89.69562557919795, "title": "Importance: 0.715 | Store: 40 | Family: EGGS", "to": "1297"}, {"from": "10", "length": 90.06793443477207, "title": "Importance: 0.713 | Store: 47 | Family: EGGS", "to": "1528"}, {"from": "10", "length": 91.38483201859916, "title": "Importance: 0.707 | Store: 6 | Family: EGGS", "to": "175"}, {"from": "10", "length": 91.47192788942908, "title": "Importance: 0.707 | Store: 2 | Family: EGGS", "to": "43"}, {"from": "10", "length": 91.94706574020569, "title": "Importance: 0.704 | Store: 4 | Family: EGGS", "to": "109"}, {"from": "10", "length": 92.27359070280076, "title": "Importance: 0.703 | Store: 1 | Family: PERSONAL CARE", "to": "25"}, {"from": "10", "length": 92.31362499061501, "title": "Importance: 0.703 | Store: 1 | Family: HOME CARE", "to": "18"}, {"from": "10", "length": 93.56829155383471, "title": "Importance: 0.697 | Store: 37 | Family: EGGS", "to": "1198"}, {"from": "10", "length": 96.00066264512685, "title": "Importance: 0.685 | Store: 1 | Family: DELI", "to": "9"}, {"from": "10", "length": 96.7203403478151, "title": "Importance: 0.682 | Store: 9 | Family: EGGS", "to": "274"}, {"from": "10", "length": 102.53473191330716, "title": "Importance: 0.654 | Store: 53 | Family: EGGS", "to": "1726"}, {"from": "10", "length": 106.12812240395814, "title": "Importance: 0.637 | Store: 5 | Family: EGGS", "to": "142"}, {"from": "10", "length": 110.7262657919396, "title": "Importance: 0.615 | Store: 20 | Family: EGGS", "to": "637"}, {"from": "10", "length": 113.21330197460263, "title": "Importance: 0.603 | Store: 46 | Family: EGGS", "to": "1495"}, {"from": "10", "length": 114.20654313523058, "title": "Importance: 0.599 | Store: 15 | Family: EGGS", "to": "472"}, {"from": "10", "length": 121.05210571851627, "title": "Importance: 0.566 | Store: 11 | Family: EGGS", "to": "340"}, {"from": "10", "length": 124.12937206623539, "title": "Importance: 0.551 | Store: 48 | Family: EGGS", "to": "1561"}, {"from": "10", "length": 133.38106298957078, "title": "Importance: 0.507 | Store: 23 | Family: EGGS", "to": "736"}, {"from": "10", "length": 139.43981277456734, "title": "Importance: 0.478 | Store: 1 | Family: PREPARED FOODS", "to": "29"}, {"from": "10", "length": 187.10950108944215, "title": "Importance: 0.252 | Store: 1 | Family: HOME AND KITCHEN I", "to": "15"}, {"from": "10", "length": 189.82240969679054, "title": "Importance: 0.239 | Store: 1 | Family: HOME AND KITCHEN II", "to": "16"}, {"from": "10", "length": 190.00330617954944, "title": "Importance: 0.238 | Store: 1 | Family: SEAFOOD", "to": "32"}, {"from": "10", "length": 190.27066908289962, "title": "Importance: 0.237 | Store: 1 | Family: GROCERY II", "to": "13"}, {"from": "10", "length": 190.86722193468108, "title": "Importance: 0.234 | Store: 10 | Family: EGGS", "to": "307"}, {"from": "10", "length": 191.7084994023746, "title": "Importance: 0.230 | Store: 14 | Family: EGGS", "to": "439"}, {"from": "10", "length": 191.87196230563865, "title": "Importance: 0.229 | Store: 1 | Family: CELEBRATION", "to": "6"}, {"from": "10", "length": 192.2793293473893, "title": "Importance: 0.227 | Store: 1 | Family: LADIESWEAR", "to": "19"}, {"from": "10", "length": 192.6955713243453, "title": "Importance: 0.225 | Store: 1 | Family: PLAYERS AND ELECTRONICS", "to": "27"}, {"from": "10", "length": 192.77937589069364, "title": "Importance: 0.225 | Store: 1 | Family: MAGAZINES", "to": "23"}, {"from": "10", "length": 192.8243048587217, "title": "Importance: 0.224 | Store: 1 | Family: PET SUPPLIES", "to": "26"}, {"from": "10", "length": 193.04962925459236, "title": "Importance: 0.223 | Store: 1 | Family: HARDWARE", "to": "14"}, {"from": "10", "length": 193.05625570586074, "title": "Importance: 0.223 | Store: 1 | Family: AUTOMOTIVE", "to": "0"}, {"from": "10", "length": 193.10544364067755, "title": "Importance: 0.223 | Store: 1 | Family: BEAUTY", "to": "2"}, {"from": "10", "length": 193.2512756740735, "title": "Importance: 0.222 | Store: 1 | Family: BABY CARE", "to": "1"}]);
+
+                  nodeColors = {};
+                  allNodes = nodes.get({ returnType: "Object" });
+                  for (nodeId in allNodes) {
+                    nodeColors[nodeId] = allNodes[nodeId].color;
+                  }
+                  allEdges = edges.get({ returnType: "Object" });
+                  // adding nodes and edges to the graph
+                  data = {nodes: nodes, edges: edges};
+
+                  var options = {
+    "configure": {
+        "enabled": true,
+        "filter": [
+            "physics",
+            "nodes",
+            "edges"
+        ]
+    },
+    "edges": {
+        "color": {
+            "inherit": true
+        },
+        "smooth": {
+            "enabled": true,
+            "type": "dynamic"
+        }
+    },
+    "interaction": {
+        "dragNodes": true,
+        "hideEdgesOnDrag": false,
+        "hideNodesOnDrag": false
+    },
+    "physics": {
+        "enabled": true,
+        "stabilization": {
+            "enabled": true,
+            "fit": true,
+            "iterations": 1000,
+            "onlyDynamicEdges": false,
+            "updateInterval": 50
+        }
+    }
+};
+
+                  
+
+
+                  
+                  // if this network requires displaying the configure window,
+                  // put it in its div
+                  options.configure["container"] = document.getElementById("config");
+                  
+
+                  network = new vis.Network(container, data, options);
+
+                  
+
+                  
+
+                  
+
+
+                  
+
+                  return network;
+
+              }
+              drawGraph();
+        </script>
+    </body>
+</html>

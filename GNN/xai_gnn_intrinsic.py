@@ -19,6 +19,7 @@ from architecture.stgnn import STGNN, QuantileLoss
 from config.settings import GNN_CHECKPOINTS_PATH, GNN_DATA_PATH
 from utils.utils import get_date_splits
 from config.settings import ENC_VARS as feature_cols
+import matplotlib.pyplot as plt
 
 
 def build_static_graph_for_node(A_np: np.ndarray, target_idx: int):
@@ -189,8 +190,6 @@ def save_neighbor_importances_plot(
     out_dir: str,
     top_k: int = 20,
 ):
-    import pandas as pd
-    import matplotlib.pyplot as plt
     os.makedirs(out_dir, exist_ok=True)
     m = np.load(mask_path)
     node_map = pd.read_csv(node_index_csv)
@@ -223,8 +222,6 @@ def save_least_important_neighbors_plot(
     out_dir: str,
     bottom_k: int = 20,
 ):
-    import pandas as pd
-    import matplotlib.pyplot as plt
     os.makedirs(out_dir, exist_ok=True)
     m = np.load(mask_path)
     node_map = pd.read_csv(node_index_csv)
@@ -267,7 +264,7 @@ def main():
     parser.add_argument("--out-dir", type=str,
                         default=os.path.join(GNN_CHECKPOINTS_PATH))
     parser.add_argument("--batch-size", type=int, default=16)
-    parser.add_argument("--top-k", type=int, default=20,
+    parser.add_argument("--top-k", type=int, default=100,
                         help="Top-K neighbors of target node for explainer")
     args = parser.parse_args()
 
